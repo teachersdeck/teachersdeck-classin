@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TeachersDeck × ClassIn — self-test</title>
+<style>
+  :root{ --bg:#10151d; --card:#18202b; --line:#2a3544; --txt:#eef1f5; --lo:#9aa6b6; --amber:#e8a33d; --ok:#46c9a0; --warn:#e8a33d; --bad:#ef7a5a; }
+  *{ box-sizing:border-box; } html,body{ margin:0; background:var(--bg); color:var(--txt); font:15px/1.5 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; }
+  header{ padding:18px 22px 6px; max-width:1000px; margin:0 auto; } h1{ margin:0 0 4px; font-size:22px; } header p{ margin:4px 0; color:var(--lo); max-width:70ch; }
+  main{ max-width:1000px; margin:0 auto; padding:8px 22px 90px; display:grid; gap:12px; }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; } .card h2{ margin:0 0 4px; font-size:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .num{ display:inline-grid; place-items:center; width:24px; height:24px; border-radius:50%; background:#243042; font-size:12px; color:var(--lo); }
+  .how{ margin:2px 0 10px; color:var(--lo); font-size:13.5px; }
+  .chip{ margin-left:auto; font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; padding:3px 10px; border-radius:99px; border:1px solid currentColor; } .chip.pending{ color:var(--lo); } .chip.pass{ color:var(--ok); } .chip.warn{ color:var(--warn); } .chip.fail{ color:var(--bad); }
+  button,.btn{ font:inherit; font-size:14px; font-weight:600; color:var(--txt); background:#263245; border:1px solid var(--line); border-radius:10px; padding:8px 14px; cursor:pointer; text-decoration:none; display:inline-block; } button:hover,.btn:hover{ border-color:var(--amber); } button.go{ background:var(--amber); color:#231604; border-color:var(--amber); }
+  button.yes:hover{ border-color:var(--ok); } button.no:hover{ border-color:var(--bad); } .row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:6px 0; }
+  .out{ font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace; color:#c9d3e0; background:#0f141b; border:1px solid var(--line); border-radius:8px; padding:8px 10px; white-space:pre-wrap; word-break:break-word; margin-top:8px; min-height:1.5em; }
+  .vn{ font-size:22px; line-height:1.4; } .clock{ font:800 clamp(40px,12vw,120px)/1 ui-monospace,Menlo,Consolas,monospace; letter-spacing:.04em; text-align:center; padding:8px 0; }
+  .meter{ height:14px; border-radius:99px; background:#0f141b; border:1px solid var(--line); overflow:hidden; } .meter i{ display:block; height:100%; width:0; background:var(--ok); transition:width .08s linear; }
+  #bar{ position:fixed; left:0; right:0; bottom:0; background:rgba(16,21,29,.96); border-top:1px solid var(--line); padding:10px 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:center; z-index:5; }
+  #bar .prog{ color:var(--lo); font-size:13px; } textarea{ width:100%; min-height:200px; font:12px/1.45 ui-monospace,Menlo,Consolas,monospace; color:#dbe3ee; background:#0b0f15; border:1px solid var(--line); border-radius:10px; padding:10px; resize:vertical; }
+  a.link{ color:var(--amber); } .small{ font-size:12.5px; color:var(--lo); }
+</style>
+</head>
+<body>
+<header>
+  <h1>TeachersDeck × ClassIn — self-test</h1>
+  <p>Open this page <b>inside ClassIn’s built-in browser</b> (teaching toolbox → Browser), with a second device joined as a student. Work down the checks — about an hour. Your answers are saved on this device, so you can leave to look at the app and come back. When you’re done, press <b>Show report</b>, copy it and paste it to Claude (add screenshots of anything marked ⚠ or ✖).</p>
+</header>
+<main id="main"></main>
+<div id="bar">
+  <span class="prog" id="prog"></span>
+  <button class="go" id="show">Show report</button>
+  <button id="reset">Start over</button>
+</div>
+<div style="max-width:1000px;margin:0 auto;padding:0 22px 110px" id="reportBox" hidden>
+  <div class="card"><h2>Report <span class="small">— copy all of it</span></h2>
+    <div class="row"><button id="copy" class="go">Copy</button><button id="selall">Select all</button><button id="dl">Download .json</button></div>
+    <textarea id="report" readonly></textarea></div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var KEY = 'td_classin_check_v1', BUILD = 'classin.1';
+  var R; try{ R = JSON.parse(localStorage.getItem(KEY)); }catch(e){} if(!R || typeof R !== 'object') R = {};
+  R.checks = R.checks || {}; R.visits = (R.visits || 0) + 1; R.firstSeen = R.firstSeen || new Date().toISOString();
+  function save(){ try{ localStorage.setItem(KEY, JSON.stringify(R)); }catch(e){} }
+  function $(s, r){ return (r || document).querySelector(s); }
+  function el(tag, attrs, html){ var e = document.createElement(tag); if(attrs) for(var k in attrs) e.setAttribute(k, attrs[k]); if(html != null) e.innerHTML = html; return e; }
+  function esc(s){ return String(s).replace(/[&<>]/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;' }[c]; }); }
+
+  var CHECKS = [
+    { id:'env',     title:'Environment',                  how:'Runs by itself. Look for “secure context: yes” — the microphone only works on https (or localhost).' },
+    { id:'fs',      title:'Full screen and resizing',      how:'Press “Try full screen”. Then drag, resize and move the browser window on the blackboard and watch the size below follow. (Students watch only; they can’t click in this browser.)' },
+    { id:'text',    title:'Vietnamese text and a big clock', how:'Check the Vietnamese below and the big clock — on YOUR screen and on the STUDENT device. Every accent should be visible, none missing or replaced by boxes.' },
+    { id:'mic',     title:'Microphone (for the Noise Meter)', how:'ClassIn is already using the microphone for the lesson. Press the button and allow the microphone if asked. Make some noise or talk for a few seconds.' },
+    { id:'audio',   title:'Sound (timer chime)',           how:'Run test A with ClassIn’s “Share audio” OFF, then test B with it ON, and say whether the STUDENT device heard the chime each time.' },
+    { id:'persist', title:'Saved settings survive close and reopen', how:'This page stores a token. Close the ClassIn browser (or the whole lesson), open this page again, and see if it recognises you. That decides whether Pro licences and settings will stick.' },
+    { id:'perf',    title:'Speed on this computer',        how:'Press the button and leave the page alone for 6 seconds. Try it on an older laptop too.' },
+    { id:'app',     title:'The real TeachersDeck, in ClassIn', how:'Open each link, check it, then use the browser’s Back button to return here and mark the result.' }
+  ];
+  var main = $('#main');
+  function chipHtml(id){ var c = R.checks[id] || {}; var s = c.status || 'pending', lab = { pending:'not done', pass:'✔ pass', warn:'⚠ check', fail:'✖ problem' }[s]; return '<span class="chip ' + s + '">' + lab + '</span>'; }
+  function setCheck(id, status, detail, data){ R.checks[id] = { status:status, detail:detail || '', data:data || null, at:new Date().toISOString() }; save(); var c = $('#c-' + id + ' .chip'); if(c) c.outerHTML = chipHtml(id); out(id, detail); progress(); }
+  function out(id, txt){ var o = $('#c-' + id + ' .out'); if(o) o.textContent = txt || ''; }
+  function ask(id, label, onYes, onNo){ var r = el('div', { class:'row' }, '<span class="small">' + label + '</span>'); var y = el('button', { class:'yes' }, 'Yes'), n = el('button', { class:'no' }, 'No / problem'); y.onclick = onYes; n.onclick = onNo; r.appendChild(y); r.appendChild(n); return r; }
+  function progress(){ var done = CHECKS.filter(function(c){ return R.checks[c.id] && R.checks[c.id].status !== 'pending'; }).length; $('#prog').textContent = done + ' of ' + CHECKS.length + ' checks done'; }
+
+  CHECKS.forEach(function(c, i){
+    var card = el('section', { class:'card', id:'c-' + c.id }, '<h2><span class="num">' + (i + 1) + '</span>' + esc(c.title) + chipHtml(c.id) + '</h2><p class="how">' + c.how + '</p><div class="body"></div><div class="out"></div>');
+    main.appendChild(card);
+  });
+  function body(id){ return $('#c-' + id + ' .body'); }
+
+  /* 1 environment */
+  (function(){
+    var d = { ua:navigator.userAgent, platform:navigator.platform, language:navigator.language, timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone || ''), secureContext:window.isSecureContext, protocol:location.protocol, url:location.href,
+      inner:innerWidth + 'x' + innerHeight, outer:outerWidth + 'x' + outerHeight, screen:screen.width + 'x' + screen.height, dpr:window.devicePixelRatio, touch:('ontouchstart' in window) || navigator.maxTouchPoints > 0,
+      fullscreenApi:!!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen), audioContext:!!(window.AudioContext || window.webkitAudioContext), getUserMedia:!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+      clipboard:!!(navigator.clipboard && navigator.clipboard.writeText), indexedDB:!!window.indexedDB, serviceWorker:'serviceWorker' in navigator, cookiesEnabled:navigator.cookieEnabled, online:navigator.onLine };
+    try{ localStorage.setItem('__t', '1'); localStorage.removeItem('__t'); d.localStorage = true; }catch(e){ d.localStorage = false; }
+    try{ sessionStorage.setItem('__t', '1'); sessionStorage.removeItem('__t'); d.sessionStorage = true; }catch(e){ d.sessionStorage = false; }
+    R.env = d; var bad = !d.secureContext || !d.localStorage || !d.audioContext;
+    var lines = []; for(var k in d) if(k !== 'ua' && k !== 'url') lines.push(k + ': ' + d[k]); lines.push('ua: ' + d.ua);
+    setCheck('env', bad ? 'warn' : 'pass', lines.join('\n'), d);
+  })();
+
+  /* 2 full screen + resize */
+  (function(){
+    var b = body('fs'), n = 0, last = '', log = [];
+    var live = el('div', { class:'small' }); b.appendChild(live);
+    function upd(){ last = innerWidth + 'x' + innerHeight; live.innerHTML = 'Window now: <b>' + last + '</b> · resize events: <b>' + n + '</b> · fullscreen: <b>' + (document.fullscreenElement ? 'yes' : 'no') + '</b>'; }
+    window.addEventListener('resize', function(){ n++; log.push(last = innerWidth + 'x' + innerHeight); if(log.length > 12) log.shift(); upd(); }); document.addEventListener('fullscreenchange', upd); upd();
+    var row = el('div', { class:'row' }); var bf = el('button', { class:'go' }, 'Try full screen'); var fsRes = '';
+    bf.onclick = function(){ var d = document, r; try{ r = d.fullscreenElement ? d.exitFullscreen() : d.documentElement.requestFullscreen(); }catch(e){ fsRes = 'threw: ' + e.message; out('fs', fsRes); return; }
+      if(r && r.then) r.then(function(){ fsRes = 'fullscreen request accepted'; out('fs', fsRes); }).catch(function(e){ fsRes = 'fullscreen refused: ' + (e && e.name) + ' ' + (e && e.message); out('fs', fsRes); }); else { fsRes = 'no promise returned'; out('fs', fsRes); } };
+    row.appendChild(bf); b.appendChild(row);
+    b.appendChild(ask('fs', 'Did the page follow when you resized/moved the browser, and did full screen work (or does ClassIn’s own full-screen button work)?',
+      function(){ setCheck('fs', 'pass', (fsRes || 'fullscreen not tried') + '\nresize events seen: ' + n + '\nlast sizes: ' + log.join(', ')); },
+      function(){ setCheck('fs', 'fail', (fsRes || 'fullscreen not tried') + '\nresize events seen: ' + n + '\nlast sizes: ' + log.join(', ') + '\n(user reported a problem)'); }));
+  })();
+
+  /* 3 Vietnamese + big clock */
+  (function(){
+    var b = body('text');
+    b.innerHTML = '<div class="vn">Tiếng Việt: ă â ê ô ơ ư đ — Hẹn giờ · Bảng điểm · Hướng dẫn · Nghiêm túc · Yên lặng · Học sinh giỏi · Cố lên! ẳ ẵ ặ ể ễ ệ ổ ỗ ộ ở ỡ ợ ử ữ ự ỳ ỷ ỹ ỵ</div><div class="clock" id="bigclock">00:00:00</div>';
+    function tick(){ var d = new Date(), p = function(x){ return String(x).padStart(2, '0'); }; var c = $('#bigclock'); if(c) c.textContent = p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); } tick(); setInterval(tick, 1000);
+    b.appendChild(ask('text', 'Does everything look right on the STUDENT device (all accents, a clock that updates)?', function(){ setCheck('text', 'pass', 'Vietnamese + big clock OK on student device'); }, function(){ setCheck('text', 'fail', 'Vietnamese/clock problem on a device — add a screenshot'); }));
+  })();
+
+  /* 4 microphone */
+  (function(){
+    var b = body('mic'), row = el('div', { class:'row' }), btn = el('button', { class:'go' }, 'Start microphone (6 s)'), m = el('div', { class:'meter' }, '<i></i>'); row.appendChild(btn); b.appendChild(row); b.appendChild(m);
+    btn.onclick = async function(){
+      var info = { permission:'?' }; try{ var p = await navigator.permissions.query({ name:'microphone' }); info.permission = p.state; }catch(e){}
+      if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ setCheck('mic', 'fail', 'getUserMedia is not available here (secure context: ' + window.isSecureContext + ')', info); return; }
+      var stream; try{ stream = await navigator.mediaDevices.getUserMedia({ audio:true }); }catch(e){ info.error = (e && e.name) + ': ' + (e && e.message); setCheck('mic', 'fail', 'Microphone refused → ' + info.error + '\npermission was: ' + info.permission + '\nThis is the expected failure if ClassIn holds the mic. The Noise Meter then shows a help message instead.', info); return; }
+      var tr = stream.getAudioTracks()[0]; info.device = tr ? tr.label : ''; info.settings = tr && tr.getSettings ? tr.getSettings() : {};
+      var AC = window.AudioContext || window.webkitAudioContext, ac = new AC(); try{ await ac.resume(); }catch(e){} var src = ac.createMediaStreamSource(stream), an = ac.createAnalyser(); an.fftSize = 1024; src.connect(an);
+      var max = 0, t0 = performance.now(), buf = new Uint8Array(an.fftSize);
+      (function loop(){ an.getByteTimeDomainData(buf); var s = 0; for(var i = 0; i < buf.length; i++){ var v = (buf[i] - 128) / 128; s += v * v; } var rms = Math.sqrt(s / buf.length); max = Math.max(max, rms); m.firstChild.style.width = Math.min(100, rms * 400) + '%';
+        if(performance.now() - t0 < 6000) requestAnimationFrame(loop); else { stream.getTracks().forEach(function(t){ t.stop(); }); ac.close(); info.maxLevel = +max.toFixed(4);
+          setCheck('mic', max > 0.02 ? 'pass' : 'warn', (max > 0.02 ? 'Microphone works alongside ClassIn.' : 'Microphone opened but the level stayed flat — did you make noise? Is it muted or captured by ClassIn?') + '\ndevice: ' + info.device + '\nmax level: ' + info.maxLevel + '\npermission: ' + info.permission, info); } })();
+    };
+  })();
+
+  /* 5 sound */
+  (function(){
+    var b = body('audio'), res = R.audioRes || {}; function chime(){ var AC = window.AudioContext || window.webkitAudioContext, ac = new AC(); try{ ac.resume(); }catch(e){} var n = ac.currentTime + 0.05;
+      [880, 1109, 1319, 1760].forEach(function(f, i){ var o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = f; g.gain.setValueAtTime(0.0001, n + i * 0.26); g.gain.linearRampToValueAtTime(0.4, n + i * 0.26 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, n + i * 0.26 + 0.55); o.connect(g); g.connect(ac.destination); o.start(n + i * 0.26); o.stop(n + i * 0.26 + 0.6); });
+      return { state:ac.state, sampleRate:ac.sampleRate, outputLatency:ac.outputLatency, baseLatency:ac.baseLatency }; }
+    function eval_(){ var a = res.A, bb = res.B; var st = (bb === true) ? 'pass' : (bb === false || a === true) ? 'warn' : (a === false && bb === undefined) ? 'pending' : 'pending';
+      if(bb === true) st = 'pass'; else if(bb === false) st = 'fail'; else if(a !== undefined) st = 'warn'; else st = 'pending';
+      var msg = 'A (Share audio OFF): students heard = ' + (res.A === undefined ? '—' : res.A) + '\nB (Share audio ON): students heard = ' + (res.B === undefined ? '—' : res.B) + '\n' + (bb === true ? 'Chime reaches students when Share audio is ON — the on-screen flash is the fallback when it is off.' : bb === false ? 'Even with Share audio ON students heard nothing — report this; the flash cue is then the only signal.' : 'Run test B too.');
+      R.audioRes = res; setCheck('audio', st, msg, res); }
+    ['A', 'B'].forEach(function(k){ var row = el('div', { class:'row' }); var bt = el('button', k === 'B' ? { class:'go' } : {}, 'Test ' + k + ': play chime in 5 s (Share audio ' + (k === 'A' ? 'OFF' : 'ON') + ')'); var cd = el('span', { class:'small' });
+      bt.onclick = function(){ var n = 5; cd.textContent = ' ' + n; var iv = setInterval(function(){ n--; cd.textContent = ' ' + n; if(n <= 0){ clearInterval(iv); var inf = chime(); cd.textContent = ' played (context: ' + inf.state + ')'; res['ctx' + k] = inf; save(); } }, 1000); };
+      row.appendChild(bt); row.appendChild(cd); row.appendChild(ask('audio', 'Heard on the STUDENT device?', function(){ res[k] = true; eval_(); }, function(){ res[k] = false; eval_(); })); b.appendChild(row); });
+  })();
+
+  /* 6 persistence */
+  (function(){
+    var b = body('persist'), P = 'td_classin_persist_v1', prev = null; try{ prev = JSON.parse(localStorage.getItem(P)); }catch(e){}
+    var now = { token:(prev && prev.token) || Math.random().toString(36).slice(2, 10), visits:((prev && prev.visits) || 0) + 1, first:(prev && prev.first) || new Date().toISOString() };
+    try{ localStorage.setItem(P, JSON.stringify(now)); }catch(e){}
+    try{ sessionStorage.setItem(P, now.token); }catch(e){} try{ document.cookie = 'td_classin_t=' + now.token + '; max-age=31536000; path=/; SameSite=Lax'; }catch(e){}
+    var cookieOk = document.cookie.indexOf('td_classin_t=') !== -1, idb = 'checking…';
+    var line = el('div', { class:'small' }); b.appendChild(line);
+    function paint(){ line.innerHTML = 'Token <b>' + now.token + '</b> · visits to this page: <b>' + now.visits + '</b> · localStorage: <b>' + (prev ? 'KEPT from an earlier visit' : 'new') + '</b> · cookie: <b>' + (cookieOk ? 'set' : 'blocked') + '</b> · IndexedDB: <b>' + idb + '</b>'; }
+    paint();
+    try{ var rq = indexedDB.open('td_classin_check', 1); rq.onupgradeneeded = function(){ rq.result.createObjectStore('k'); }; rq.onsuccess = function(){ var db = rq.result; var tx = db.transaction('k', 'readwrite'); var st = tx.objectStore('k'); var g = st.get('t'); g.onsuccess = function(){ var had = g.result; st.put(now.token, 't'); idb = had ? 'KEPT (' + had + ')' : 'new'; paint(); finish(had); }; }; rq.onerror = function(){ idb = 'failed'; paint(); finish(null); }; }catch(e){ idb = 'unavailable'; paint(); finish(null); }
+    function finish(had){ var d = { token:now.token, visits:now.visits, localStorageKept:!!prev, cookie:cookieOk, indexedDBKept:!!had };
+      if(now.visits === 1){ setCheck('persist', 'pending', 'First visit recorded. Now CLOSE the ClassIn browser (or the lesson), reopen it, open this page again — the result appears then.', d); }
+      else { var kept = d.localStorageKept; setCheck('persist', kept ? 'pass' : 'fail', kept ? 'Saved settings survived: localStorage kept (visits: ' + now.visits + ', cookie: ' + (cookieOk ? 'yes' : 'no') + ', IndexedDB kept: ' + d.indexedDBKept + ').' : 'Storage was EMPTY on a return visit — settings and Pro licences would not stick in this browser.', d); } }
+  })();
+
+  /* 7 performance */
+  (function(){
+    var b = body('perf'), row = el('div', { class:'row' }), btn = el('button', { class:'go' }, 'Run 6-second speed test'), cv = el('canvas', { width:'640', height:'120', style:'width:100%;max-width:640px;border-radius:8px;background:#0b0f15' }); row.appendChild(btn); b.appendChild(row); b.appendChild(cv);
+    btn.onclick = function(){ var ctx = cv.getContext('2d'), frames = [], last = performance.now(), t0 = last, n = 0;
+      (function f(now){ frames.push(now - last); last = now; n++; ctx.clearRect(0, 0, 640, 120); for(var i = 0; i < 160; i++){ ctx.fillStyle = 'hsl(' + ((i * 5 + n * 3) % 360) + ',70%,60%)'; ctx.fillRect((i * 4 + n * 2) % 640, 60 + Math.sin((i + n / 4) / 6) * 50, 8, 8); }
+        if(now - t0 < 6000) requestAnimationFrame(f); else done(); })(performance.now());
+      function done(){ var fr = frames.slice(2).sort(function(a, b){ return a - b; }), avg = fr.reduce(function(a, b){ return a + b; }, 0) / fr.length, p95 = fr[Math.floor(fr.length * .95)], long = fr.filter(function(x){ return x > 50; }).length, fps = 1000 / avg;
+        var t1 = performance.now(), x = 0; for(var i = 0; i < 3e6; i++) x += Math.sin(i); var cpu = Math.round(performance.now() - t1);
+        var d = { avgFps:+fps.toFixed(1), p95FrameMs:+p95.toFixed(1), framesOver50ms:long, cpuBenchMs:cpu };
+        setCheck('perf', fps >= 50 && cpu < 400 ? 'pass' : fps >= 30 ? 'warn' : 'fail', 'average ' + d.avgFps + ' fps · slowest-5% frame ' + d.p95FrameMs + ' ms · frames over 50 ms: ' + long + ' · CPU benchmark ' + cpu + ' ms\n(60 fps and under 400 ms is smooth; note which computer this was)', d); }
+    };
+  })();
+
+  /* 8 the real app */
+  (function(){
+    var b = body('app'), ed = 'edition=classin';
+    var links = [ ['Timer: 10 seconds, starts by itself (checks the chime + flash)', 'index.html?' + ed + '&w=timer&sec=10&go=1'], ['Traffic light: green', 'index.html?' + ed + '&w=traffic&light=green'], ['Instructions in English + Vietnamese', 'index.html?' + ed + '&w=instructions&title=Speaking%20pairs&titlevi=N%C3%B3i%20theo%20c%E1%BA%B7p&steps=Greet%20your%20partner~Ch%C3%A0o%20b%E1%BA%A1n|Ask%20three%20questions~H%E1%BB%8Fi%20ba%20c%C3%A2u'],
+      ['Scoreboard: 3 teams', 'index.html?' + ed + '&w=scoreboard&teams=Lions,Tigers,Bears'], ['Noise meter (needs the microphone)', 'index.html?' + ed + '&w=noise&go=1'], ['Clock, Vietnamese labels', 'index.html?' + ed + '&w=clock&lang=vi'], ['The whole ClassIn-edition deck', 'index.html?' + ed] ];
+    var ul = el('div', { class:'small' }); links.forEach(function(l){ ul.appendChild(el('div', { class:'row' }, '<a class="btn" href="' + l[1] + '">Open</a><span>' + esc(l[0]) + '</span>')); }); b.appendChild(ul);
+    b.appendChild(ask('app', 'After trying the links: did they all open, fill the window, and behave?', function(){ setCheck('app', 'pass', 'TeachersDeck links work in ClassIn'); }, function(){ setCheck('app', 'fail', 'Some link had a problem — say which, with a screenshot'); }));
+  })();
+
+  /* report */
+  function report(){
+    var L = ['# TeachersDeck × ClassIn self-test report', '', 'Build: ' + BUILD + ' · Taken: ' + new Date().toISOString() + ' · Page visits: ' + R.visits, 'Page: ' + location.href, ''];
+    L.push('| # | Check | Result | Notes |', '|---|---|---|---|');
+    CHECKS.forEach(function(c, i){ var k = R.checks[c.id] || {}; var lab = { pending:'not done', pass:'PASS', warn:'CHECK', fail:'PROBLEM' }[k.status || 'pending']; L.push('| ' + (i + 1) + ' | ' + c.title + ' | ' + lab + ' | ' + String(k.detail || '').split('\n').join(' ⏎ ').replace(/\|/g, '/') + ' |'); });
+    L.push('', '```json', JSON.stringify({ build:BUILD, env:R.env, checks:R.checks }, null, 1), '```'); return L.join('\n');
+  }
+  $('#show').onclick = function(){ $('#report').value = report(); $('#reportBox').hidden = false; $('#reportBox').scrollIntoView({ behavior:'smooth' }); };
+  $('#selall').onclick = function(){ $('#report').focus(); $('#report').select(); };
+  $('#copy').onclick = function(){ var t = $('#report'); t.value = report(); t.focus(); t.select(); var ok = false; try{ ok = document.execCommand('copy'); }catch(e){} if(!ok && navigator.clipboard) navigator.clipboard.writeText(t.value).then(function(){ ok = true; }); $('#copy').textContent = ok ? 'Copied ✔' : 'Select the text and copy it by hand'; setTimeout(function(){ $('#copy').textContent = 'Copy'; }, 2500); };
+  $('#dl').onclick = function(){ var a = el('a', { href:URL.createObjectURL(new Blob([JSON.stringify({ build:BUILD, env:R.env, checks:R.checks }, null, 1)], { type:'application/json' })), download:'classin-selftest.json' }); document.body.appendChild(a); a.click(); a.remove(); };
+  $('#reset').onclick = function(){ if(confirm('Clear all answers on this page?')){ try{ localStorage.removeItem(KEY); }catch(e){} location.reload(); } };
+  save(); progress();
+})();
+</script>
+</body>
+</html>

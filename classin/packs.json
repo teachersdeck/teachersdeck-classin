@@ -1,0 +1,54 @@
+{
+  "_about": "Single source of truth for ClassIn lesson packs and short links. Read by classin-links.html (fetch) and by tools/build_classin.py, which writes _redirects and classin/LESSON-TEMPLATES.md from it. Vietnamese text needs a native-speaker check before customers see it.",
+  "packs": [
+    { "id":"warmup5", "title":{"en":"5-minute warm-up","vi":"Khởi động 5 phút"},
+      "when":{"en":"Start of class while students settle in.","vi":"Đầu buổi học, lúc học sinh ổn định chỗ ngồi."},
+      "links":[
+        { "label":{"en":"Timer 5:00 (starts by itself)","vi":"Hẹn giờ 5:00 (tự chạy)"}, "w":"timer", "params":{"min":"5","go":"1"} },
+        { "label":{"en":"Warm-up instructions","vi":"Hướng dẫn khởi động"}, "w":"instructions", "params":{"title":"Warm-up","titlevi":"Khởi động","steps":"Say hello to your partner~Chào bạn cùng cặp|Ask: How are you today?~Hỏi: Hôm nay bạn thế nào?|Answer in a full sentence~Trả lời bằng một câu đầy đủ"} },
+        { "label":{"en":"Idiom of the Day","vi":"Thành ngữ trong ngày"}, "w":"idiomday", "params":{} } ] },
+    { "id":"speaking", "title":{"en":"Speaking pair work (10 minutes)","vi":"Luyện nói theo cặp (10 phút)"},
+      "when":{"en":"Pairs or breakout rooms practise a speaking task.","vi":"Học sinh luyện nói theo cặp hoặc theo phòng nhỏ."},
+      "links":[
+        { "label":{"en":"Speaking steps","vi":"Các bước luyện nói"}, "w":"instructions", "params":{"title":"Speaking pairs","titlevi":"Nói theo cặp","steps":"Greet your partner~Chào bạn của em|Ask three questions~Hỏi ba câu hỏi|Swap roles~Đổi vai"} },
+        { "label":{"en":"Timer 2:00 per round","vi":"Hẹn giờ 2:00 mỗi lượt"}, "w":"timer", "params":{"min":"2"} },
+        { "label":{"en":"Conversation cards","vi":"Thẻ hội thoại"}, "w":"convocards", "params":{} } ] },
+    { "id":"quiet", "title":{"en":"Quiet work (15 minutes)","vi":"Làm bài yên lặng (15 phút)"},
+      "when":{"en":"Silent reading, writing or a test.","vi":"Đọc thầm, viết hoặc kiểm tra."},
+      "links":[
+        { "label":{"en":"Timer 15:00 (starts by itself)","vi":"Hẹn giờ 15:00 (tự chạy)"}, "w":"timer", "params":{"min":"15","go":"1"} },
+        { "label":{"en":"Traffic light: red","vi":"Đèn giao thông: đỏ"}, "w":"traffic", "params":{"light":"red"} },
+        { "label":{"en":"Noise meter","vi":"Đo độ ồn"}, "w":"noise", "params":{"go":"1"} } ] },
+    { "id":"teamgame", "title":{"en":"Team game (20 minutes)","vi":"Trò chơi theo đội (20 phút)"},
+      "when":{"en":"Review game with teams scoring points.","vi":"Trò chơi ôn tập, các đội ghi điểm."},
+      "links":[
+        { "label":{"en":"Scoreboard: 4 teams","vi":"Bảng điểm: 4 đội"}, "w":"scoreboard", "params":{"teams":"Team 1,Team 2,Team 3,Team 4"} },
+        { "label":{"en":"Round timer 1:00","vi":"Hẹn giờ mỗi lượt 1:00"}, "w":"timer", "params":{"min":"1"} },
+        { "label":{"en":"Name picker","vi":"Chọn tên ngẫu nhiên"}, "w":"namepicker", "params":{} } ] },
+    { "id":"frame", "title":{"en":"Lesson frame (45 minutes)","vi":"Khung bài học (45 phút)"},
+      "when":{"en":"Show the plan for the lesson on the board.","vi":"Hiển thị kế hoạch buổi học trên bảng."},
+      "links":[
+        { "label":{"en":"Agenda board","vi":"Bảng chương trình"}, "w":"agenda", "params":{"schedule":"0:00 Warm-up|0:10 New language|0:25 Practice|0:40 Wrap-up","objective":"Today we practise asking and answering questions.","donow":"Write three questions you can ask a new friend."} },
+        { "label":{"en":"Clock","vi":"Đồng hồ"}, "w":"clock", "params":{} } ] },
+    { "id":"exit", "title":{"en":"Exit routine (3 minutes)","vi":"Kết thúc buổi học (3 phút)"},
+      "when":{"en":"Last minutes of class.","vi":"Vài phút cuối buổi học."},
+      "links":[
+        { "label":{"en":"Exit steps","vi":"Các bước kết thúc"}, "w":"instructions", "params":{"title":"Before you go","titlevi":"Trước khi ra về","steps":"Write one new word you learned~Viết một từ mới em đã học|Tell your partner~Nói với bạn cùng cặp|Say goodbye~Chào tạm biệt"} },
+        { "label":{"en":"Timer 3:00","vi":"Hẹn giờ 3:00"}, "w":"timer", "params":{"min":"3","go":"1"} },
+        { "label":{"en":"Traffic light: yellow","vi":"Đèn giao thông: vàng"}, "w":"traffic", "params":{"light":"yellow"} } ] }
+  ],
+  "shortlinks": [
+    { "slug":"ci",   "w":"",           "params":{}, "note":"the whole ClassIn-edition deck" },
+    { "slug":"t1",   "w":"timer",      "params":{"min":"1","go":"1"} },  { "slug":"t2",  "w":"timer", "params":{"min":"2","go":"1"} },
+    { "slug":"t3",   "w":"timer",      "params":{"min":"3","go":"1"} },  { "slug":"t5",  "w":"timer", "params":{"min":"5","go":"1"} },
+    { "slug":"t10",  "w":"timer",      "params":{"min":"10","go":"1"} }, { "slug":"t15", "w":"timer", "params":{"min":"15","go":"1"} },
+    { "slug":"t20",  "w":"timer",      "params":{"min":"20","go":"1"} }, { "slug":"t30", "w":"timer", "params":{"min":"30","go":"1"} },
+    { "slug":"sw",   "w":"stopwatch",  "params":{"go":"1"} },
+    { "slug":"red",  "w":"traffic",    "params":{"light":"red"} }, { "slug":"yellow", "w":"traffic", "params":{"light":"yellow"} }, { "slug":"green", "w":"traffic", "params":{"light":"green"} },
+    { "slug":"noise","w":"noise",      "params":{"go":"1"} }, { "slug":"clock", "w":"clock", "params":{} },
+    { "slug":"teams2","w":"scoreboard","params":{"teams":"Team 1,Team 2"} }, { "slug":"teams3","w":"scoreboard","params":{"teams":"Team 1,Team 2,Team 3"} },
+    { "slug":"teams4","w":"scoreboard","params":{"teams":"Team 1,Team 2,Team 3,Team 4"} }, { "slug":"teams6","w":"scoreboard","params":{"teams":"Team 1,Team 2,Team 3,Team 4,Team 5,Team 6"} },
+    { "slug":"steps","w":"instructions","params":{} }, { "slug":"agenda","w":"agenda","params":{} },
+    { "slug":"vi",   "w":"clock",      "params":{"lang":"vi"} }
+  ]
+}
