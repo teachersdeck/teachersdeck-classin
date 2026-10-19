@@ -59,6 +59,5 @@
   var h = document.documentElement;
   if(classin) h.classList.add('ed-classin');
   if(E.single) h.classList.add('board-single');
-  else if(classin) h.classList.add('board-deck');   // ClassIn port round 2: the whole deck (not just one widget) is scaled to fit the window
   if(!E.ui) h.classList.add('board-ui-off');
 })();

@@ -2247,18 +2247,13 @@ function startGesture(g){
 function moveGesture(e){
   if(!gesture || e.pointerId !== gesture.pointerId) return;
   const g = gesture;
-  const bk = (window.TD_BOARD && TD_BOARD.deckScale) || 1;   // ClassIn port: the whole deck can be CSS-scaled to fit the window, so pointer deltas (real screen px) must convert back to wall-space px
-  const dx = (e.clientX - g.sx) / bk, dy = (e.clientY - g.sy) / bk;
+  const dx = e.clientX - g.sx, dy = e.clientY - g.sy;
   if(g.kind === 'move'){
     // Keep the panel reachable: never past the top or left edge, and always
     // leave enough of the title bar on screen (roughly the grip and the start
-    // of the title) that it can be grabbed and dragged back. ClassIn port: when
-    // the whole deck is CSS-scaled (bk != 1), this cap is divided by bk so it
-    // still names a real on-screen pixel margin — otherwise a zoomed-in deck
-    // would let a widget be dragged to a wall-space x that looks fine in raw
-    // coordinates but renders well past the real right/bottom edge of the screen.
-    const maxX = Math.max(0, wall.clientWidth / bk - 150);
-    const maxY = Math.max(0, wall.clientHeight / bk - 44);
+    // of the title) that it can be grabbed and dragged back.
+    const maxX = Math.max(0, wall.clientWidth - 150);
+    const maxY = Math.max(0, wall.clientHeight - 44);
     g.el.style.left = Math.min(maxX, Math.max(0, g.ox + dx)) + 'px';
     g.el.style.top  = Math.min(maxY, Math.max(0, g.oy + dy)) + 'px';
   } else {
