@@ -67,40 +67,66 @@
     var b = document.createElement('button'); b.type = 'button'; b.className = 'wbtn'; b.style.marginTop = '8px'; b.textContent = tx('board_retry'); b.addEventListener('click', function(){ if(retry) retry(); });
     msgEl.appendChild(p); msgEl.appendChild(b); return true;
   }
-  window.TD_BOARD = { timerDone: timerDone, audioHint: audioHint, micHelp: micHelp, chime: chime, testSound: testSound };
+  window.TD_BOARD = { timerDone: timerDone, audioHint: audioHint, micHelp: micHelp, chime: chime, testSound: testSound, deckScale: 1 };
+
+  /* ---------- shared board toolbar: bigger/smaller, full screen, test sound; "all widgets" only makes sense coming from single-widget mode ---------- */
+  function buildToolbar(getUser, setUser, showAll){
+    var bar = document.createElement('div'); bar.id = 'board-bar'; bar.setAttribute('role', 'toolbar');
+    function btn(label, title, fn){ var b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.title = title; b.setAttribute('aria-label', title); b.addEventListener('click', fn); bar.appendChild(b); return b; }
+    btn('A−', tx('board_smaller'), function(){ setUser(getUser() - 0.1); }); btn('A+', tx('board_bigger'), function(){ setUser(getUser() + 0.1); });
+    btn('⛶', tx('board_full'), function(){ var d = document, r = d.fullscreenElement ? d.exitFullscreen() : d.documentElement.requestFullscreen(); if(r && r.catch) r.catch(function(){ toast(tx('board_full_fail'), 5200); }); });
+    btn('🔊', tx('board_sound'), testSound);
+    if(showAll) btn('☰', tx('board_all'), function(){ location.href = location.pathname + '?edition=classin'; });
+    document.body.appendChild(bar);
+    var idle = 0; function wake(){ bar.classList.remove('idle'); clearTimeout(idle); idle = setTimeout(function(){ bar.classList.add('idle'); }, 3500); }
+    ['pointermove', 'pointerdown', 'touchstart', 'keydown'].forEach(function(ev){ document.addEventListener(ev, wake, { passive:true }); }); wake();
+  }
 
   /* ---------- board mode: one widget fills the window ---------- */
-  if(!E.single) return;
-  var SZ = 'td_board_scale', user = 1; try{ user = parseFloat(localStorage.getItem(SZ)) || 1; }catch(e){}
-  var NAT = { clock:{ w:230, h:250 }, timer:{ w:260, h:230 }, stopwatch:{ w:240, h:290 }, traffic:{ w:200, h:270 }, scoreboard:{ w:300, h:460 }, noise:{ w:320, h:560 }, countdown:{ w:260, h:230 } };   // size the widget is laid out at before it is scaled up
-  var id = E.widget, el = null;
-  var def = WIDGETS.filter(function(w){ return w.id === id; })[0];
-  if(!def || E.hides(id)){ var m = document.createElement('div'); m.className = 'board-missing'; m.textContent = tx('board_missing', { id: id }); document.body.appendChild(m); return; }
-  Object.keys(widgetEls).slice().forEach(function(k){ closeWidget(k); });
-  openWidget(id); var rec = widgetEls[id]; if(!rec) return; el = rec.el; el.classList.add('widget-board');
-  var MEASURE = { clock:1, timer:1, stopwatch:1, traffic:1, countdown:1, scoreboard:1 };   // simple widgets: use their real content height (no dead space; a scoreboard grows with 2-8 teams)
-  function natural(){
-    var n = NAT[id] || { w:def.w, h:def.h };
-    if(MEASURE[id]){ el.style.transform = 'none'; el.style.width = n.w + 'px'; el.style.height = 'auto'; var mh = el.offsetHeight; if(mh > 40) return { w:n.w, h:mh }; }
-    return n;
+  if(E.single){
+    var SZ = 'td_board_scale', user = 1; try{ user = parseFloat(localStorage.getItem(SZ)) || 1; }catch(e){}
+    var NAT = { clock:{ w:230, h:250 }, timer:{ w:260, h:230 }, stopwatch:{ w:240, h:290 }, traffic:{ w:200, h:270 }, scoreboard:{ w:300, h:460 }, noise:{ w:320, h:560 }, countdown:{ w:260, h:230 } };   // size the widget is laid out at before it is scaled up
+    var id = E.widget, el = null;
+    var def = WIDGETS.filter(function(w){ return w.id === id; })[0];
+    if(!def || E.hides(id)){ var m = document.createElement('div'); m.className = 'board-missing'; m.textContent = tx('board_missing', { id: id }); document.body.appendChild(m); return; }
+    Object.keys(widgetEls).slice().forEach(function(k){ closeWidget(k); });
+    openWidget(id); var rec = widgetEls[id]; if(!rec) return; el = rec.el; el.classList.add('widget-board');
+    var MEASURE = { clock:1, timer:1, stopwatch:1, traffic:1, countdown:1, scoreboard:1 };   // simple widgets: use their real content height (no dead space; a scoreboard grows with 2-8 teams)
+    function natural(){
+      var n = NAT[id] || { w:def.w, h:def.h };
+      if(MEASURE[id]){ el.style.transform = 'none'; el.style.width = n.w + 'px'; el.style.height = 'auto'; var mh = el.offsetHeight; if(mh > 40) return { w:n.w, h:mh }; }
+      return n;
+    }
+    function fit(){
+      var vw = window.innerWidth, vh = window.innerHeight, k = E.scale * user, mode = E.boardLayout[id] || 'scale', w, h, s;
+      if(mode === 'fill'){ w = Math.round(vw * 0.96 / k); h = Math.round(vh * 0.96 / k); s = k; }
+      else { var n = natural(); w = n.w; h = n.h; s = Math.min(vw / w, vh / h) * 0.92 * k; }
+      el.style.width = w + 'px'; el.style.height = h + 'px'; el.style.transform = 'translate(-50%,-50%) scale(' + s.toFixed(4) + ')';
+    }
+    fit(); window.addEventListener('resize', fit); if(window.ResizeObserver) new ResizeObserver(fit).observe(document.documentElement);
+    function setUser(v){ user = Math.min(1.6, Math.max(0.6, Math.round(v * 10) / 10)); try{ localStorage.setItem(SZ, String(user)); }catch(e){} fit(); }
+    buildToolbar(function(){ return user; }, setUser, true);
   }
-  function fit(){
-    var vw = window.innerWidth, vh = window.innerHeight, k = E.scale * user, mode = E.boardLayout[id] || 'scale', w, h, s;
-    if(mode === 'fill'){ w = Math.round(vw * 0.96 / k); h = Math.round(vh * 0.96 / k); s = k; }
-    else { var n = natural(); w = n.w; h = n.h; s = Math.min(vw / w, vh / h) * 0.92 * k; }
-    el.style.width = w + 'px'; el.style.height = h + 'px'; el.style.transform = 'translate(-50%,-50%) scale(' + s.toFixed(4) + ')';
+  /* ---------- board mode (round 2): the WHOLE deck scaled to fit the window; widgets stay open, draggable and resizable ---------- */
+  else {
+    var DSZ = 'td_deck_scale', duser = 1; try{ duser = parseFloat(localStorage.getItem(DSZ)) || 1; }catch(e){}
+    var MARGIN = 28, MINW = 480, MINH = 360, MAXK = 2.2, MINK = 0.35;   // a deck with nothing open yet still gets a sane minimum canvas
+    function footprint(){                                               // the bounding box of every open widget — the deck's own natural size, whatever screen it was arranged on
+      var els = wall.querySelectorAll('.widget'), r = 0, b = 0;
+      for(var i = 0; i < els.length; i++){ var w = els[i]; if(w.hidden) continue; var x = w.offsetLeft + w.offsetWidth, y = w.offsetTop + w.offsetHeight; if(x > r) r = x; if(y > b) b = y; }
+      return { w: Math.max(MINW, r + MARGIN), h: Math.max(MINH, b + MARGIN) };
+    }
+    function fitDeck(){
+      var n = footprint(); wall.style.width = n.w + 'px'; wall.style.height = n.h + 'px';
+      var k = Math.min(MAXK, Math.max(MINK, Math.min(window.innerWidth / n.w, window.innerHeight / n.h) * 0.96 * E.scale * duser));
+      wall.style.transform = 'translate(-50%,-50%) scale(' + k.toFixed(4) + ')';
+      TD_BOARD.deckScale = k;
+    }
+    var deb = 0; function schedule(){ clearTimeout(deb); deb = setTimeout(fitDeck, 60); }   // setTimeout, not requestAnimationFrame: rAF can be suspended while the tab/window isn't the active one, and ClassIn's teaching toolbox may not keep this page focused
+    fitDeck(); window.addEventListener('resize', schedule); window.addEventListener('pointerup', schedule);   // re-fit after a drag/resize gesture ends
+    if(window.MutationObserver) new MutationObserver(schedule).observe(wall, { childList:true });               // a widget opened or closed from the dock
+    setInterval(schedule, 2000);   // catches a widget growing on its own (e.g. Scoreboard adding a team) without a drag/resize gesture
+    function setDuser(v){ duser = Math.min(1.8, Math.max(0.5, Math.round(v * 10) / 10)); try{ localStorage.setItem(DSZ, String(duser)); }catch(e){} schedule(); }
+    buildToolbar(function(){ return duser; }, setDuser, false);
   }
-  fit(); window.addEventListener('resize', fit); if(window.ResizeObserver) new ResizeObserver(fit).observe(document.documentElement);
-
-  /* toolbar */
-  var bar = document.createElement('div'); bar.id = 'board-bar'; bar.setAttribute('role', 'toolbar');
-  function btn(label, title, fn){ var b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.title = title; b.setAttribute('aria-label', title); b.addEventListener('click', fn); bar.appendChild(b); return b; }
-  function setUser(v){ user = Math.min(1.6, Math.max(0.6, Math.round(v * 10) / 10)); try{ localStorage.setItem(SZ, String(user)); }catch(e){} fit(); }
-  btn('A−', tx('board_smaller'), function(){ setUser(user - 0.1); }); btn('A+', tx('board_bigger'), function(){ setUser(user + 0.1); });
-  btn('⛶', tx('board_full'), function(){ var d = document, r = d.fullscreenElement ? d.exitFullscreen() : d.documentElement.requestFullscreen(); if(r && r.catch) r.catch(function(){ toast(tx('board_full_fail'), 5200); }); });
-  btn('🔊', tx('board_sound'), testSound);
-  btn('☰', tx('board_all'), function(){ location.href = location.pathname + '?edition=classin'; });
-  document.body.appendChild(bar);
-  var idle = 0; function wake(){ bar.classList.remove('idle'); clearTimeout(idle); idle = setTimeout(function(){ bar.classList.add('idle'); }, 3500); }
-  ['pointermove', 'pointerdown', 'touchstart', 'keydown'].forEach(function(ev){ document.addEventListener(ev, wake, { passive:true }); }); wake();
 })();

@@ -13,6 +13,9 @@ html.board-single .widget-board .widget-head, html.board-single .widget-board .w
 html.board-single .widget-board .widget-body{ flex:1 1 auto; min-height:0; }
 .board-missing{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:24px; text-align:center; font:600 22px/1.4 'Quicksand',system-ui,sans-serif; color:#fff; }
 
+/* ---- board mode (round 2): the WHOLE deck scaled to fit the browser window, widgets stay open and draggable ---- */
+html.board-deck #wall{ position:fixed !important; left:50% !important; top:50% !important; right:auto !important; bottom:auto !important; transform-origin:center center; }
+
 /* the little toolbar (fades away when idle; any pointer movement brings it back) */
 #board-bar{ position:fixed; right:14px; bottom:14px; z-index:60; display:flex; gap:6px; padding:6px; border-radius:16px; background:rgba(14,18,26,.84); border:1px solid rgba(255,255,255,.16); box-shadow:0 8px 24px rgba(0,0,0,.4); backdrop-filter:blur(6px); transition:opacity .45s ease; }
 #board-bar.idle{ opacity:0; pointer-events:none; }

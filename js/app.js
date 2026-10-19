@@ -2247,7 +2247,8 @@ function startGesture(g){
 function moveGesture(e){
   if(!gesture || e.pointerId !== gesture.pointerId) return;
   const g = gesture;
-  const dx = e.clientX - g.sx, dy = e.clientY - g.sy;
+  const bk = (window.TD_BOARD && TD_BOARD.deckScale) || 1;   // ClassIn port: the whole deck can be CSS-scaled to fit the window, so pointer deltas (real screen px) must convert back to wall-space px
+  const dx = (e.clientX - g.sx) / bk, dy = (e.clientY - g.sy) / bk;
   if(g.kind === 'move'){
     // Keep the panel reachable: never past the top or left edge, and always
     // leave enough of the title bar on screen (roughly the grip and the start
