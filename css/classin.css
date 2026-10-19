@@ -16,8 +16,10 @@ html.board-single .widget-board .widget-body{ flex:1 1 auto; min-height:0; }
 /* board mode (round 2): #wall is deliberately NOT repositioned/resized here — js/classin.js only scales it
    around its own fixed top-left corner (0,0), a point that always renders at screen (0,0) regardless of
    scale, so #wall's real window-sized box, and every widget's real drag/placement coordinates, are untouched;
-   app.js's drag clamp divides its margins by the current scale to match. */
-html.board-deck #wall{ transform-origin:0 0; }
+   app.js's drag clamp divides its margins by the current scale to match. The scale itself only changes when
+   content no longer fits (js/classin.js), and transitions smoothly here rather than jumping when it does. */
+html.board-deck #wall{ transform-origin:0 0; transition:transform .35s ease; }
+@media (prefers-reduced-motion: reduce){ html.board-deck #wall{ transition:none; } }
 
 /* the little toolbar (fades away when idle; any pointer movement brings it back) */
 #board-bar{ position:fixed; right:14px; bottom:14px; z-index:60; display:flex; gap:6px; padding:6px; border-radius:16px; background:rgba(14,18,26,.84); border:1px solid rgba(255,255,255,.16); box-shadow:0 8px 24px rgba(0,0,0,.4); backdrop-filter:blur(6px); transition:opacity .45s ease; }

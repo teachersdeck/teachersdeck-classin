@@ -124,22 +124,29 @@
     // renders at screen (0,0) no matter the scale, so there is no origin to freeze or recentre at all. The only remaining
     // piece is that app.js's moveGesture() must also know the current scale so its "stay on screen" clamp names a real
     // screen-pixel margin rather than a wall-space one (see the matching comment there).
+    // The scale only changes when it actually needs to (content no longer fits at the current scale), not on every
+    // widget-opened/closed/pointerup/interval tick — otherwise opening ONE new widget that still fits comfortably
+    // made every already-placed widget visibly jump toward the (0,0) corner for no reason (any scale change moves
+    // everything but the corner itself). A real window resize or the manual A-/A+ override still always apply.
+    // The wall's own CSS transition (see classin.css) smooths out the scale changes that do happen.
+    var curK = null;
     function footprint(){
       var els = wall.querySelectorAll('.widget'), r = 0, b = 0;
       for(var i = 0; i < els.length; i++){ var w = els[i]; if(w.hidden) continue; var x = w.offsetLeft + w.offsetWidth, y = w.offsetTop + w.offsetHeight; if(x > r) r = x; if(y > b) b = y; }
       return { w: Math.max(MINW, r + MARGIN), h: Math.max(MINH, b + MARGIN) };
     }
-    function fitDeck(){
+    function neededK(n){ return Math.min(MAXK, Math.max(MINK, Math.min(window.innerWidth / n.w, window.innerHeight / n.h) * 0.96 * E.scale * duser)); }
+    function fitDeck(force){
       var n = footprint();
-      var k = Math.min(MAXK, Math.max(MINK, Math.min(window.innerWidth / n.w, window.innerHeight / n.h) * 0.96 * E.scale * duser));
-      wall.style.transform = 'scale(' + k.toFixed(4) + ')';
-      TD_BOARD.deckScale = k;
+      if(force || curK === null || n.w * curK > window.innerWidth + 0.5 || n.h * curK > window.innerHeight + 0.5) curK = neededK(n);
+      wall.style.transform = 'scale(' + curK.toFixed(4) + ')';
+      TD_BOARD.deckScale = curK;
     }
-    var deb = 0; function schedule(){ clearTimeout(deb); deb = setTimeout(fitDeck, 60); }   // setTimeout, not requestAnimationFrame: rAF can be suspended while the tab/window isn't the active one, and ClassIn's teaching toolbox may not keep this page focused
-    fitDeck(); window.addEventListener('resize', schedule); window.addEventListener('pointerup', schedule);   // re-fit after a drag/resize gesture ends or the real window resizes
-    if(window.MutationObserver) new MutationObserver(schedule).observe(wall, { childList:true });   // a widget opened or closed
-    setInterval(schedule, 2000);   // catches a widget growing on its own (e.g. Scoreboard adding a team) without a drag/resize gesture
-    function setDuser(v){ duser = Math.min(1.8, Math.max(0.5, Math.round(v * 10) / 10)); try{ localStorage.setItem(DSZ, String(duser)); }catch(e){} schedule(); }
+    var deb = 0, debForce = false; function schedule(force){ debForce = debForce || force; clearTimeout(deb); deb = setTimeout(function(){ fitDeck(debForce); debForce = false; }, 60); }   // setTimeout, not requestAnimationFrame: rAF can be suspended while the tab/window isn't the active one, and ClassIn's teaching toolbox may not keep this page focused
+    fitDeck(); window.addEventListener('resize', function(){ schedule(true); }); window.addEventListener('pointerup', function(){ schedule(false); });   // re-fit after a drag/resize gesture ends or the real window resizes
+    if(window.MutationObserver) new MutationObserver(function(){ schedule(false); }).observe(wall, { childList:true });   // a widget opened or closed — only rescales if the new content actually overflows
+    setInterval(function(){ schedule(false); }, 2000);   // catches a widget growing on its own (e.g. Scoreboard adding a team) without a drag/resize gesture
+    function setDuser(v){ duser = Math.min(1.8, Math.max(0.5, Math.round(v * 10) / 10)); try{ localStorage.setItem(DSZ, String(duser)); }catch(e){} schedule(true); }
     buildToolbar(function(){ return duser; }, setDuser, false);
   }
 })();
