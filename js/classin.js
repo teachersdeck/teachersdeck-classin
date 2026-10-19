@@ -110,16 +110,23 @@
   /* ---------- board mode (round 2): the WHOLE deck scaled to fit the window; widgets stay open, draggable and resizable ---------- */
   else {
     var DSZ = 'td_deck_scale', duser = 1; try{ duser = parseFloat(localStorage.getItem(DSZ)) || 1; }catch(e){}
-    var MARGIN = 28, MINW = 480, MINH = 360, MAXK = 2.2, MINK = 0.35;   // a deck with nothing open yet still gets a sane minimum canvas
-    function footprint(){                                               // the bounding box of every open widget — the deck's own natural size, whatever screen it was arranged on
-      var els = wall.querySelectorAll('.widget'), r = 0, b = 0;
-      for(var i = 0; i < els.length; i++){ var w = els[i]; if(w.hidden) continue; var x = w.offsetLeft + w.offsetWidth, y = w.offsetTop + w.offsetHeight; if(x > r) r = x; if(y > b) b = y; }
-      return { w: Math.max(MINW, r + MARGIN), h: Math.max(MINH, b + MARGIN) };
+    var MARGIN = 28, MINW = 480, MINH = 360, MAXK = 2.2, MINK = 0.35;   // a deck with nothing open yet still gets a sane minimum footprint
+    // IMPORTANT: never resize #wall itself — it must stay exactly window-sized, because wall.clientWidth/clientHeight is also the
+    // coordinate space moveGesture() clamps drags to (app.js). Shrinking it here previously trapped widgets inside a small centred
+    // box with dead space on every side ("can't drag past the left edge") and made the deck zoom IN further each time a new widget
+    // opened into that same shrunk cluster. Instead: compute the open widgets' own bounding box, then visually scale/recentre just
+    // that content around its own centre (transform-origin), leaving the wall's real size and every widget's real x/y untouched.
+    function footprint(){
+      var els = wall.querySelectorAll('.widget'), l = Infinity, t = Infinity, r = -Infinity, b = -Infinity, any = false;
+      for(var i = 0; i < els.length; i++){ var w = els[i]; if(w.hidden) continue; any = true; var x = w.offsetLeft, y = w.offsetTop, ww = w.offsetWidth, hh = w.offsetHeight; if(x < l) l = x; if(y < t) t = y; if(x + ww > r) r = x + ww; if(y + hh > b) b = y + hh; }
+      if(!any){ l = 0; t = 0; r = MINW; b = MINH; }
+      return { cx: (l + r) / 2, cy: (t + b) / 2, w: Math.max(MINW, r - l) + MARGIN * 2, h: Math.max(MINH, b - t) + MARGIN * 2 };
     }
     function fitDeck(){
-      var n = footprint(); wall.style.width = n.w + 'px'; wall.style.height = n.h + 'px';
+      var n = footprint();
       var k = Math.min(MAXK, Math.max(MINK, Math.min(window.innerWidth / n.w, window.innerHeight / n.h) * 0.96 * E.scale * duser));
-      wall.style.transform = 'translate(-50%,-50%) scale(' + k.toFixed(4) + ')';
+      wall.style.transformOrigin = n.cx + 'px ' + n.cy + 'px';
+      wall.style.transform = 'translate(' + (window.innerWidth / 2 - n.cx).toFixed(2) + 'px,' + (window.innerHeight / 2 - n.cy).toFixed(2) + 'px) scale(' + k.toFixed(4) + ')';
       TD_BOARD.deckScale = k;
     }
     var deb = 0; function schedule(){ clearTimeout(deb); deb = setTimeout(fitDeck, 60); }   // setTimeout, not requestAnimationFrame: rAF can be suspended while the tab/window isn't the active one, and ClassIn's teaching toolbox may not keep this page focused
