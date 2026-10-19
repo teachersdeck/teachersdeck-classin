@@ -4,18 +4,20 @@ Build **classin.1** on top of TeachersDeck **v0.21.0** · follows *Scoping Study
 Round 1 = **Phase 0 tooling + the core of Option 1 ("ClassIn-ready web app")**.
 
 ## Where things stand
-**Everything that can be built and tested without ClassIn is done and tested in Chromium (80 automated checks, 0 errors). Nothing has run inside ClassIn yet — that is the next step, and it is yours.** The self-test page (`classin-check.html`) is how you run the study's one-hour checklist and send me the result.
+**Update 2026-10-19: the first real ClassIn run is in, and it's 8/8 PASS.** See `classin/test-reports/2026-10-19-first-classin-run.md` for the full writeup. Headline: the site loads and runs correctly inside ClassIn's own browser, Vietnamese text is correct, the mic works alongside ClassIn's own mic use with no conflict, the timer chime reaches students when ClassIn's "Share audio" is on, settings survive closing and reopening the browser, and performance is smooth (60fps). Still open: Test A (chime with Share audio OFF) wasn't answered, and the computer/ClassIn-plan/student-device details from `TEST-REPORT-TEMPLATE.md` weren't sent yet.
+
+Everything that can be built and tested without ClassIn was already done in Chromium (80 automated checks, 0 errors) before this run.
 
 The study's big assumption — *"the widgets already run as a normal web page, not only as an extension"* — **holds**. The extension-only code (Drive/Google sign-in, downloads, microphone permission page) is already guarded behind `typeof chrome === 'undefined'`, so the +5–10 day risk the study flagged does not apply.
 
 ## Workstreams (study §6.1, Option 1)
 | # | Workstream | Status | Notes |
 |---|---|---|---|
-| 1 | Compatibility testing and fixes in ClassIn's browser | ⏳ **needs you** | Self-test page ready. I cannot reach ClassIn. Fixes follow your report. |
+| 1 | Compatibility testing and fixes in ClassIn's browser | ✅ first run passed (8/8) | Ran inside ClassIn's real browser 2026-10-19, see `classin/test-reports/`. No fixes needed yet; broader device/version coverage still open (workstream 7). |
 | 2 | Resizable "board mode" + large text | ✅ single widget · ⏳ whole deck | A link with `w=` fills the window (scaled up, or "fill" for Instructions/Agenda/Checklist), follows resizing, A−/A+ and full screen. The *whole deck* in ClassIn's window is not scaled yet (see Round 2). |
 | 3 | One-click links, presets, short links, QR | ✅ | 7 widgets take presets (timer, stopwatch, traffic, noise, scoreboard, instructions, agenda). Link builder + QR + 6 lesson packs. 22 short links (`/t5`…) via `_redirects`. |
-| 4 | Web licensing without the extension | ⏳ **decision needed** | The existing licence layer (salted key, Cloud Functions check, 7-day offline grace) is `localStorage` + HTTPS, so it already works on the web. **Pro gating is currently off** (`isPro()` returns true for testers), so nothing is enforced. Open: where keys are issued/stored, and whether storage survives closing ClassIn's browser (self-test check 6). |
-| 5 | Audio handling and on-screen cues | ✅ built · ⏳ needs real test | The timer **had no sound at all** — now a chime + a full-window "Time's up! · Hết giờ!" flash (the flash works even if remote students hear nothing). One-time "Share audio" hint (≤3 times, 15 s, slim strip). Noise Meter gives ClassIn-specific help when the mic is busy. |
+| 4 | Web licensing without the extension | ⏳ **decision needed** | The existing licence layer (salted key, Cloud Functions check, 7-day offline grace) is `localStorage` + HTTPS, so it already works on the web. **Pro gating is currently off** (`isPro()` returns true for testers), so nothing is enforced. **Storage survives closing/reopening ClassIn's browser (confirmed, check 6, 2026-10-19)** — the remaining open question is only where keys are issued/stored, and whether to turn gating on now or wait. |
+| 5 | Audio handling and on-screen cues | ✅ built · ✅ real test mostly passed | The timer **had no sound at all** — now a chime + a full-window "Time's up! · Hết giờ!" flash (the flash works even if remote students hear nothing). Real test confirms the chime reaches students when ClassIn's "Share audio" is on; the OFF case (flash-only fallback) wasn't directly confirmed yet. One-time "Share audio" hint (≤3 times, 15 s, slim strip) — confirmed showing. Noise Meter gives ClassIn-specific help when the mic is busy, and real-test confirms no conflict with ClassIn's own mic use. |
 | 6 | Guides, videos, lesson templates (EN/VI) | ✅ written · ⏳ **needs you** | `classin-guide.html` (bilingual), `VIDEO-SCRIPTS.md`, `LESSON-TEMPLATES.md`. **Have a native speaker check the Vietnamese**; you record the videos. |
 | 7 | QA across ClassIn versions/devices | ⏳ **needs you** | Chromium automation only (below). |
 
@@ -45,14 +47,15 @@ Edits to existing files — **each marked `// ClassIn port` so you can `grep` th
 | Link builder | 15 | a link is built for each widget type, **opened in the real app, preset verified** · all 17 pack links · QR · EN/VI |
 | Built site | 17 | the hosted build is the ClassIn edition · all 22 short links followed through a `_redirects` emulator · guide EN/VI · extension files absent |
 
-**Not tested, because it can't be:** ClassIn's own browser (it may differ from Chromium), real students hearing audio through ClassIn, the real ClassIn microphone conflict, Windows/Mac differences. That's what the self-test is for.
+**Not tested before 2026-10-19, because it couldn't be:** ClassIn's own browser, real students hearing audio through ClassIn, the real ClassIn microphone conflict, Windows/Mac differences. The first real-ClassIn self-test run now covers all of these once, on one Windows machine — still open: other devices/OSes/ClassIn versions, and Mac.
 
 ## What I need from you next
-1. **Host the site** (see `DEPLOY.md`; Cloudflare Pages is the easiest) and tell me the address — or send me the report from a local run.
-2. **Run the one-hour self-test in ClassIn** and paste the report (`TEST-REPORT-TEMPLATE.md`). Twice: before and after closing/reopening the ClassIn browser.
-3. **Answer:** which ClassIn plans show the *Browser* tool? Do you have access to a school account with API access (only matters for Option 2)?
-4. **Decide licensing** (#4): switch Pro gating on for the ClassIn edition now, or wait for the test results?
+1. ~~Host the site~~ — done: live at https://teachersdeck.github.io/teachersdeck-classin/ (GitHub Pages; short links don't work there, use full links).
+2. ~~Run the one-hour self-test in ClassIn~~ — done once, 8/8 pass, see `classin/test-reports/2026-10-19-first-classin-run.md`. Still welcome: a second run on a different device/OS, and an answer for Test A (chime with Share audio OFF — did the flash alone work?).
+3. **Answer:** which ClassIn plans show the *Browser* tool? (the account tested with does — which plan is it on?) Do you have access to a school account with API access (only matters for Option 2)?
+4. **Decide licensing** (#4): storage now confirmed to survive closing/reopening ClassIn's browser, so a web licence will stick — switch Pro gating on for the ClassIn edition now, or wait for broader test coverage?
 5. **Vietnamese check**: a native speaker reads `classin-guide.html`, `classin-links.html`, the pack titles in `packs.json`, and `VIDEO-SCRIPTS.md`.
+6. **Fill in the rest of `TEST-REPORT-TEMPLATE.md`** for the 2026-10-19 run: computer spec, ClassIn version/plan, student device, and screenshots of the timer flash and the Instructions widget in Vietnamese.
 
 ## Round 2 candidates (decided by your results)
 Scale the **whole deck** to fit ClassIn's window · fixes from the ClassIn compatibility report · enforce Pro for the ClassIn edition · more presets (poll, hall pass, name picker) · scoreboard team colours · a bilingual one-page customer handout · the security/privacy pack outline (study #13) if a centre asks.
