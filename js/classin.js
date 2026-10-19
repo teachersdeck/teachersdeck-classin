@@ -117,31 +117,28 @@
     // opened into that same shrunk cluster.
     // Two more attempts, also wrong: (a) scaling around the content's OWN bounding-box centre recentres the view every time a
     // widget moves, which just moved that centre too — so the very next re-fit snapped the view right back on top of it,
-    // undoing the drag (worst with one widget open, since moving it IS moving the centre). (b) scaling around a always-fixed
-    // point (the viewport's own centre) never gets undone by a drag, but a normally-positioned widget far from that point (most
-    // start near a corner) gets pushed off-screen once scaled up.
-    // Fixed: freeze the recentring point and only recompute it when the WIDGET SET changes (opened/closed) or on first load —
-    // a plain reposition/resize drag, a browser resize, or the manual A-/A+ override only rescale around the frozen point, so
-    // they can never cancel out a drag, but opening or closing a widget (a real change to what needs to fit) still recentres.
-    var originCx = 0, originCy = 0, haveOrigin = false;
+    // undoing the drag. (b) freezing that centre so a drag can't move it stopped the snap-back, but the frozen point still
+    // wasn't tied to where the real screen edges are — the widget's DATA position could reach the wall's true edge
+    // (offsetLeft 0) while its SCREEN position still landed short of the real edge, which looked exactly like the original bug.
+    // Fixed properly: anchor the scale at the WALL'S OWN fixed top-left corner (0,0) — a point that by definition always
+    // renders at screen (0,0) no matter the scale, so there is no origin to freeze or recentre at all. The only remaining
+    // piece is that app.js's moveGesture() must also know the current scale so its "stay on screen" clamp names a real
+    // screen-pixel margin rather than a wall-space one (see the matching comment there).
     function footprint(){
-      var els = wall.querySelectorAll('.widget'), l = Infinity, t = Infinity, r = -Infinity, b = -Infinity, any = false;
-      for(var i = 0; i < els.length; i++){ var w = els[i]; if(w.hidden) continue; any = true; var x = w.offsetLeft, y = w.offsetTop, ww = w.offsetWidth, hh = w.offsetHeight; if(x < l) l = x; if(y < t) t = y; if(x + ww > r) r = x + ww; if(y + hh > b) b = y + hh; }
-      if(!any){ l = 0; t = 0; r = MINW; b = MINH; }
-      return { cx: (l + r) / 2, cy: (t + b) / 2, w: Math.max(MINW, r - l) + MARGIN * 2, h: Math.max(MINH, b - t) + MARGIN * 2 };
+      var els = wall.querySelectorAll('.widget'), r = 0, b = 0;
+      for(var i = 0; i < els.length; i++){ var w = els[i]; if(w.hidden) continue; var x = w.offsetLeft + w.offsetWidth, y = w.offsetTop + w.offsetHeight; if(x > r) r = x; if(y > b) b = y; }
+      return { w: Math.max(MINW, r + MARGIN), h: Math.max(MINH, b + MARGIN) };
     }
     function fitDeck(){
       var n = footprint();
-      if(!haveOrigin){ originCx = n.cx; originCy = n.cy; haveOrigin = true; }
       var k = Math.min(MAXK, Math.max(MINK, Math.min(window.innerWidth / n.w, window.innerHeight / n.h) * 0.96 * E.scale * duser));
-      wall.style.transformOrigin = originCx + 'px ' + originCy + 'px';
-      wall.style.transform = 'translate(' + (window.innerWidth / 2 - originCx).toFixed(2) + 'px,' + (window.innerHeight / 2 - originCy).toFixed(2) + 'px) scale(' + k.toFixed(4) + ')';
+      wall.style.transform = 'scale(' + k.toFixed(4) + ')';
       TD_BOARD.deckScale = k;
     }
     var deb = 0; function schedule(){ clearTimeout(deb); deb = setTimeout(fitDeck, 60); }   // setTimeout, not requestAnimationFrame: rAF can be suspended while the tab/window isn't the active one, and ClassIn's teaching toolbox may not keep this page focused
-    fitDeck(); window.addEventListener('resize', schedule); window.addEventListener('pointerup', schedule);   // re-fit (frozen recentring point) after a drag/resize gesture ends or the real window resizes
-    if(window.MutationObserver) new MutationObserver(function(){ haveOrigin = false; schedule(); }).observe(wall, { childList:true });   // a widget opened or closed: recentre
-    setInterval(schedule, 2000);   // catches a widget growing on its own (e.g. Scoreboard adding a team) without a drag/resize gesture — rescales only, frozen recentring point
+    fitDeck(); window.addEventListener('resize', schedule); window.addEventListener('pointerup', schedule);   // re-fit after a drag/resize gesture ends or the real window resizes
+    if(window.MutationObserver) new MutationObserver(schedule).observe(wall, { childList:true });   // a widget opened or closed
+    setInterval(schedule, 2000);   // catches a widget growing on its own (e.g. Scoreboard adding a team) without a drag/resize gesture
     function setDuser(v){ duser = Math.min(1.8, Math.max(0.5, Math.round(v * 10) / 10)); try{ localStorage.setItem(DSZ, String(duser)); }catch(e){} schedule(); }
     buildToolbar(function(){ return duser; }, setDuser, false);
   }
