@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="td-edition" content="classin">
+<title>TeachersDeck × ClassIn — quick start</title>
+<!-- Vietnamese text below was written by Claude: have a native speaker check it before customers see it (scoping study, section 5.1). -->
+<style>
+  :root{ --bg:#10151d; --card:#18202b; --line:#2a3544; --txt:#eef1f5; --lo:#9aa6b6; --amber:#e8a33d; --ok:#46c9a0; }
+  *{ box-sizing:border-box; } html,body{ margin:0; background:var(--bg); color:var(--txt); font:16px/1.6 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; }
+  .wrap{ max-width:820px; margin:0 auto; padding:18px 22px 60px; } .top{ display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+  h1{ font-size:26px; margin:10px 0 4px; } h2{ font-size:19px; margin:30px 0 6px; color:var(--amber); } p,li{ color:#d4dbe5; } .lead{ color:var(--lo); font-size:17px; }
+  ol,ul{ padding-left:22px; } li{ margin:5px 0; } code{ background:#0b0f15; border:1px solid var(--line); padding:1px 7px; border-radius:6px; font-size:.9em; }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 16px; margin:12px 0; } .tip{ border-left:4px solid var(--amber); } .ok{ border-left:4px solid var(--ok); }
+  a{ color:var(--amber); } .seg{ display:inline-flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; } .seg button{ font:inherit; font-size:14px; font-weight:600; color:var(--txt); background:#18202b; border:0; padding:8px 16px; cursor:pointer; } .seg button.on{ background:var(--amber); color:#231604; }
+  .btnrow a{ display:inline-block; margin:4px 8px 4px 0; padding:9px 16px; border-radius:10px; background:#263245; border:1px solid var(--line); text-decoration:none; color:var(--txt); font-weight:600; } .btnrow a:hover{ border-color:var(--amber); }
+  div[lang=vi]{ display:none; } body.vi div[lang=vi]{ display:block; } body.vi div[lang=en]{ display:none; }   /* scoped to the two content blocks: <html lang> changes too */
+  @media print{ .top .seg, .btnrow{ display:none; } html,body{ background:#fff; color:#000; } p,li{ color:#222; } .card{ border-color:#bbb; background:#fff; } h2{ color:#a05d00; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div></div><div class="seg"><button id="b-en" class="on">English</button><button id="b-vi">Tiếng Việt</button></div></div>
+
+  <!-- ================= English ================= -->
+  <div lang="en">
+    <h1>TeachersDeck on the ClassIn board</h1>
+    <p class="lead">Timers, a traffic light, a noise meter, team scores and bilingual instructions — big and clear on the shared board, so students in the room and online see the same thing.</p>
+
+    <h2>1 · Open it in ClassIn</h2>
+    <ol>
+      <li>Start your lesson. Open the <b>teaching toolbox</b> and choose <b>Browser</b>.</li>
+      <li>Paste a TeachersDeck link (see step 2) and press Enter.</li>
+      <li>Drag and resize the browser on the blackboard, or go <b>full screen</b>. The widget grows to fill the window.</li>
+    </ol>
+    <div class="card tip"><b>Students watch; they can’t click.</b> ClassIn’s browser is controlled by the teacher, which is exactly right for timers and scoreboards. You press the buttons; everyone sees the result.</div>
+
+    <h2>2 · Use a link for each tool</h2>
+    <p>Each link opens <b>one widget</b>, already set up. Make your own on the <a href="classin-links.html">link builder</a>, or use a ready-made lesson pack there.</p>
+    <ul>
+      <li><code>…/index.html?edition=classin&amp;w=timer&amp;min=5&amp;go=1</code> — a 5-minute timer that starts by itself</li>
+      <li><code>…&amp;w=traffic&amp;light=green</code> — the traffic light on green</li>
+      <li><code>…&amp;w=scoreboard&amp;teams=Lions,Tigers,Bears</code> — a scoreboard with your team names</li>
+      <li><code>…&amp;w=instructions&amp;title=Speaking&amp;steps=Greet your partner~Chào bạn|Ask three questions~Hỏi ba câu hỏi</code> — instructions in English <b>and</b> Vietnamese</li>
+    </ul>
+    <p>The bottom-right buttons on the board let you make the widget <b>bigger or smaller</b>, go <b>full screen</b>, <b>test the sound</b>, or open <b>all widgets</b>. They fade away when you stop moving the mouse.</p>
+
+    <h2>3 · Sound</h2>
+    <div class="card ok">When a timer ends, TeachersDeck plays a chime <b>and flashes the whole window “Time’s up! · Hết giờ!”</b>. The flash always works.</div>
+    <p>For online students to <b>hear</b> the chime, switch on <b>Share audio</b> in ClassIn’s browser toolbar. Press the 🔊 button to test it. If students hear nothing, don’t worry — they still see the flash.</p>
+
+    <h2>4 · Noise meter</h2>
+    <p>The noise meter listens through your microphone. ClassIn is already using the microphone for your lesson, so your computer may ask permission or refuse. If it refuses, press <b>Try again</b>, allow it when asked, or use the <b>Traffic Light</b> by hand instead.</p>
+
+    <h2>5 · What is not in the ClassIn edition</h2>
+    <p>The ClassIn browser is <b>shared with every student</b>. So anything that shows student names, points, notes or reports — Cloud Class, Class Activity, Notes Home, Assignments, Progress Reports — is hidden, along with Google Meet (you are already in a class) and your personal XP. Your private teaching tools stay private.</p>
+
+    <h2>6 · If something doesn’t work</h2>
+    <ul>
+      <li><b>Nothing appears / blank page</b> — check the link starts with <code>https://</code> and has <code>edition=classin</code>.</li>
+      <li><b>Too small to read from the back</b> — press <b>A+</b> on the board, or add <code>&amp;scale=1.3</code> to the link.</li>
+      <li><b>Vietnamese letters look wrong</b> — tell us which device and send a screenshot.</li>
+      <li><b>Full screen doesn’t work</b> — use ClassIn’s own full-screen button for the browser.</li>
+    </ul>
+    <div class="btnrow"><a href="classin-links.html">Link builder</a><a href="classin-check.html">Run the self-test</a><a href="index.html?edition=classin">All widgets</a></div>
+  </div>
+
+  <!-- ================= Tiếng Việt ================= -->
+  <div lang="vi">
+    <h1>TeachersDeck trên bảng ClassIn</h1>
+    <p class="lead">Hẹn giờ, đèn giao thông, đo độ ồn, bảng điểm theo đội và hướng dẫn song ngữ — to, rõ trên bảng dùng chung, để học sinh trong lớp và học sinh online cùng nhìn thấy.</p>
+
+    <h2>1 · Mở trong ClassIn</h2>
+    <ol>
+      <li>Bắt đầu buổi học. Mở <b>hộp công cụ giảng dạy</b> và chọn <b>Trình duyệt</b>.</li>
+      <li>Dán liên kết TeachersDeck (xem bước 2) rồi nhấn Enter.</li>
+      <li>Kéo và đổi cỡ trình duyệt trên bảng đen, hoặc chọn <b>toàn màn hình</b>. Widget sẽ phóng to vừa khung.</li>
+    </ol>
+    <div class="card tip"><b>Học sinh chỉ xem, không bấm được.</b> Trình duyệt của ClassIn do giáo viên điều khiển — rất phù hợp với hẹn giờ và bảng điểm. Bạn bấm nút, cả lớp nhìn thấy kết quả.</div>
+
+    <h2>2 · Mỗi công cụ một liên kết</h2>
+    <p>Mỗi liên kết mở <b>một widget</b> đã cài sẵn. Tự tạo liên kết trong <a href="classin-links.html">trang tạo liên kết</a>, hoặc dùng các bộ bài học làm sẵn ở đó.</p>
+    <ul>
+      <li><code>…/index.html?edition=classin&amp;w=timer&amp;min=5&amp;go=1</code> — hẹn giờ 5 phút, tự chạy</li>
+      <li><code>…&amp;w=traffic&amp;light=green</code> — đèn giao thông màu xanh</li>
+      <li><code>…&amp;w=scoreboard&amp;teams=Lions,Tigers,Bears</code> — bảng điểm với tên các đội của bạn</li>
+      <li><code>…&amp;w=instructions&amp;title=Speaking&amp;steps=Greet your partner~Chào bạn|Ask three questions~Hỏi ba câu hỏi</code> — hướng dẫn bằng tiếng Anh <b>và</b> tiếng Việt</li>
+    </ul>
+    <p>Các nút ở góc dưới bên phải giúp <b>phóng to/thu nhỏ</b> widget, <b>toàn màn hình</b>, <b>thử âm thanh</b>, hoặc mở <b>tất cả widget</b>. Chúng tự mờ đi khi bạn ngừng di chuyển chuột.</p>
+
+    <h2>3 · Âm thanh</h2>
+    <div class="card ok">Khi hẹn giờ kết thúc, TeachersDeck phát tiếng chuông <b>và làm nhấp nháy cả màn hình “Hết giờ! · Time’s up!”</b>. Hiệu ứng nhấp nháy luôn hoạt động.</div>
+    <p>Để học sinh online <b>nghe</b> được tiếng chuông, hãy bật <b>Chia sẻ âm thanh</b> trên thanh công cụ trình duyệt của ClassIn. Nhấn nút 🔊 để thử. Nếu học sinh không nghe thấy cũng không sao — các em vẫn nhìn thấy màn hình nhấp nháy.</p>
+
+    <h2>4 · Đo độ ồn</h2>
+    <p>Công cụ đo độ ồn dùng micro của bạn. ClassIn đang dùng micro cho buổi học nên máy tính có thể hỏi quyền hoặc từ chối. Nếu bị từ chối, hãy nhấn <b>Thử lại</b>, cho phép khi được hỏi, hoặc dùng <b>Đèn giao thông</b> thủ công.</p>
+
+    <h2>5 · Những gì không có trong phiên bản ClassIn</h2>
+    <p>Trình duyệt ClassIn được <b>chia sẻ cho mọi học sinh</b>. Vì vậy mọi thứ hiển thị tên học sinh, điểm, ghi chú hay báo cáo — Cloud Class, Class Activity, Notes Home, Assignments, Progress Reports — đều được ẩn, cùng với Google Meet (bạn đã ở trong lớp) và điểm XP cá nhân. Công cụ giảng dạy riêng của bạn vẫn được giữ kín.</p>
+
+    <h2>6 · Nếu có sự cố</h2>
+    <ul>
+      <li><b>Không hiện gì / trang trắng</b> — kiểm tra liên kết bắt đầu bằng <code>https://</code> và có <code>edition=classin</code>.</li>
+      <li><b>Quá nhỏ, ngồi cuối lớp không đọc được</b> — nhấn <b>A+</b> trên bảng, hoặc thêm <code>&amp;scale=1.3</code> vào liên kết.</li>
+      <li><b>Chữ tiếng Việt hiển thị sai</b> — cho chúng tôi biết thiết bị nào và gửi ảnh chụp màn hình.</li>
+      <li><b>Toàn màn hình không hoạt động</b> — dùng nút toàn màn hình của chính ClassIn cho trình duyệt.</li>
+    </ul>
+    <div class="btnrow"><a href="classin-links.html">Tạo liên kết</a><a href="classin-check.html">Chạy bài tự kiểm tra</a><a href="index.html?edition=classin">Tất cả widget</a></div>
+  </div>
+</div>
+<script>
+  (function(){ var b = document.body, en = document.getElementById('b-en'), vi = document.getElementById('b-vi');
+    function set(l){ b.classList.toggle('vi', l === 'vi'); en.classList.toggle('on', l !== 'vi'); vi.classList.toggle('on', l === 'vi'); document.documentElement.lang = l; try{ localStorage.setItem('td_guide_lang', l); }catch(e){} }
+    en.onclick = function(){ set('en'); }; vi.onclick = function(){ set('vi'); };
+    var q = new URLSearchParams(location.search).get('lang'), s = null; try{ s = localStorage.getItem('td_guide_lang'); }catch(e){}
+    set(q || s || ((navigator.language || '').toLowerCase().indexOf('vi') === 0 ? 'vi' : 'en')); })();
+</script>
+</body>
+</html>
