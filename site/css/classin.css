@@ -11,6 +11,9 @@ html.board-single .app-tray-tab, html.board-single #app-tray, html.board-single 
 html.board-single .widget.widget-board{ position:fixed !important; left:50% !important; top:50% !important; right:auto !important; bottom:auto !important; margin:0 !important; transform-origin:center center; z-index:20; resize:none; max-width:none; max-height:none; }
 html.board-single .widget-board .widget-head, html.board-single .widget-board .widget-resize{ display:none !important; }
 html.board-single .widget-board .widget-body{ flex:1 1 auto; min-height:0; }
+/* a full-screen widget (DrawDeck) in board mode: the whole window, as the widget lays itself out — no centring or scaling */
+html.board-single .widget.widget-full.widget-board-full{ position:fixed !important; inset:0 !important; width:auto !important; height:auto !important; max-width:none !important; transform:none !important; border-radius:0 !important; border:0 !important; margin:0 !important; z-index:20; }
+html.board-single .widget-board-full .widget-head{ display:none !important; }
 .board-missing{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:24px; text-align:center; font:600 22px/1.4 'Quicksand',system-ui,sans-serif; color:#fff; }
 @media (prefers-reduced-motion: reduce){ html.board-deck #wall{ transition:none; } }
 

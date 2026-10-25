@@ -70,10 +70,10 @@
   window.TD_BOARD = { timerDone: timerDone, audioHint: audioHint, micHelp: micHelp, chime: chime, testSound: testSound };
 
   /* ---------- shared board toolbar: bigger/smaller, full screen, test sound; "all widgets" only makes sense coming from single-widget mode ---------- */
-  function buildToolbar(getUser, setUser, showAll){
+  function buildToolbar(getUser, setUser, showAll){   // getUser null: a full-screen widget, which has no board size to change
     var bar = document.createElement('div'); bar.id = 'board-bar'; bar.setAttribute('role', 'toolbar');
     function btn(label, title, fn){ var b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.title = title; b.setAttribute('aria-label', title); b.addEventListener('click', fn); bar.appendChild(b); return b; }
-    btn('A−', tx('board_smaller'), function(){ setUser(getUser() - 0.1); }); btn('A+', tx('board_bigger'), function(){ setUser(getUser() + 0.1); });
+    if(getUser){ btn('A−', tx('board_smaller'), function(){ setUser(getUser() - 0.1); }); btn('A+', tx('board_bigger'), function(){ setUser(getUser() + 0.1); }); }
     btn('⛶', tx('board_full'), function(){ var d = document, r = d.fullscreenElement ? d.exitFullscreen() : d.documentElement.requestFullscreen(); if(r && r.catch) r.catch(function(){ toast(tx('board_full_fail'), 5200); }); });
     btn('🔊', tx('board_sound'), testSound);
     if(showAll) btn('☰', tx('board_all'), function(){ location.href = location.pathname; });
@@ -90,7 +90,12 @@
     var def = WIDGETS.filter(function(w){ return w.id === id; })[0];
     if(!def || E.hides(id)){ var m = document.createElement('div'); m.className = 'board-missing'; m.textContent = tx('board_missing', { id: id }); document.body.appendChild(m); return; }
     Object.keys(widgetEls).slice().forEach(function(k){ closeWidget(k); });
-    openWidget(id); var rec = widgetEls[id]; if(!rec) return; el = rec.el; el.classList.add('widget-board');
+    openWidget(id); var rec = widgetEls[id]; if(!rec) return; el = rec.el;
+    if(def.full){   // a full-screen widget (DrawDeck) lays itself out for the whole page: let it fill the window as it is, no scaling
+      el.classList.add('widget-board-full'); window.dispatchEvent(new Event('resize'));
+      buildToolbar(null, null, true); return;
+    }
+    el.classList.add('widget-board');
     var MEASURE = { clock:1, timer:1, stopwatch:1, traffic:1, countdown:1, scoreboard:1 };   // simple widgets: use their real content height (no dead space; a scoreboard grows with 2-8 teams)
     function natural(){
       var n = NAT[id] || { w:def.w, h:def.h };

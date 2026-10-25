@@ -11,11 +11,12 @@
    noise    go=1                         scoreboard teams=Red,Blue,Green (2-8)  keep=1 keeps scores
    instructions  title, titlevi, steps=Do this~Làm việc này|Then that~Rồi việc kia   ("|" between steps, "~" before the Vietnamese line)
    agenda   schedule, objective, donow   ("|" starts a new line)
+   drawdeck (no presets) the DrawDeck whiteboard, filling the window as it is (a full-screen widget, js/classin.js); boards stay in this browser
    Old links that still carry edition=classin work unchanged (the parameter is simply ignored).
    Every value is length-limited and treated as plain text (it is only ever shown with textContent or via the app's own escaping). */
 (function(){
   'use strict';
-  var BUILD = 'classin.1';   // the platform build: raise it for a ClassIn-only release; back to classin.1 when TeachersDeck's version changes
+  var BUILD = 'classin.2';   // the platform build: raise it for a ClassIn-only release; back to classin.1 when TeachersDeck's version changes
   var q = new URLSearchParams(location.search);
 
   /* Left out of the ClassIn edition: ClassIn's browser is SHARED ON THE BOARD, so nothing with student data or the teacher's
