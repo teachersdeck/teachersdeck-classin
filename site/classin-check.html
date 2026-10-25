@@ -43,7 +43,8 @@
 <script>
 (function(){
   'use strict';
-  var KEY = 'td_classin_check_v1', BUILD = 'classin.1';
+  var KEY = 'td_classin_check_v1', BUILD = 'classin';   // the full build number comes from build-info.json, below
+  try{ fetch('build-info.json', { cache:'no-store' }).then(function(r){ return r.json(); }).then(function(i){ if(i && i.version) BUILD = i.version; }).catch(function(){}); }catch(e){}
   var R; try{ R = JSON.parse(localStorage.getItem(KEY)); }catch(e){} if(!R || typeof R !== 'object') R = {};
   R.checks = R.checks || {}; R.visits = (R.visits || 0) + 1; R.firstSeen = R.firstSeen || new Date().toISOString();
   function save(){ try{ localStorage.setItem(KEY, JSON.stringify(R)); }catch(e){} }
@@ -171,9 +172,9 @@
 
   /* 8 the real app */
   (function(){
-    var b = body('app'), ed = 'edition=classin';
-    var links = [ ['Timer: 10 seconds, starts by itself (checks the chime + flash)', 'index.html?' + ed + '&w=timer&sec=10&go=1'], ['Traffic light: green', 'index.html?' + ed + '&w=traffic&light=green'], ['Instructions in English + Vietnamese', 'index.html?' + ed + '&w=instructions&title=Speaking%20pairs&titlevi=N%C3%B3i%20theo%20c%E1%BA%B7p&steps=Greet%20your%20partner~Ch%C3%A0o%20b%E1%BA%A1n|Ask%20three%20questions~H%E1%BB%8Fi%20ba%20c%C3%A2u'],
-      ['Scoreboard: 3 teams', 'index.html?' + ed + '&w=scoreboard&teams=Lions,Tigers,Bears'], ['Noise meter (needs the microphone)', 'index.html?' + ed + '&w=noise&go=1'], ['Clock, Vietnamese labels', 'index.html?' + ed + '&w=clock&lang=vi'], ['The whole ClassIn-edition deck', 'index.html?' + ed] ];
+    var b = body('app');
+    var links = [ ['Timer: 10 seconds, starts by itself (checks the chime + flash)', 'index.html?w=timer&sec=10&go=1'], ['Traffic light: green', 'index.html?w=traffic&light=green'], ['Instructions in English + Vietnamese', 'index.html?w=instructions&title=Speaking%20pairs&titlevi=N%C3%B3i%20theo%20c%E1%BA%B7p&steps=Greet%20your%20partner~Ch%C3%A0o%20b%E1%BA%A1n|Ask%20three%20questions~H%E1%BB%8Fi%20ba%20c%C3%A2u'],
+      ['Scoreboard: 3 teams', 'index.html?w=scoreboard&teams=Lions,Tigers,Bears'], ['Noise meter (needs the microphone)', 'index.html?w=noise&go=1'], ['Clock, Vietnamese labels', 'index.html?w=clock&lang=vi'], ['The whole ClassIn-edition deck', 'index.html'] ];
     var ul = el('div', { class:'small' }); links.forEach(function(l){ ul.appendChild(el('div', { class:'row' }, '<a class="btn" href="' + l[1] + '">Open</a><span>' + esc(l[0]) + '</span>')); }); b.appendChild(ul);
     b.appendChild(ask('app', 'After trying the links: did they all open, fill the window, and behave?', function(){ setCheck('app', 'pass', 'TeachersDeck links work in ClassIn'); }, function(){ setCheck('app', 'fail', 'Some link had a problem — say which, with a screenshot'); }));
   })();

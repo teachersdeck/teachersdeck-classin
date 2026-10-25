@@ -1,13 +1,13 @@
-/* TeachersDeck — ClassIn board layer (port round 1, build classin.1). Loaded AFTER app.js. Inert unless the ClassIn edition is on (see js/edition.js).
+/* TeachersDeck for ClassIn — the board layer. tools/build_platform.py loads it AFTER app.js, in the ClassIn build only (js/platform.js sets TD_PLATFORM).
    1. Board mode: a link with ?w=<widget> opens that widget alone, scaled to fill ClassIn's browser window (which the teacher resizes on the blackboard).
    2. A small toolbar: bigger / smaller, full screen, test sound, all widgets.
    3. Sound: the timer had none, and remote students can only hear a page if the teacher turns on ClassIn's "Share audio". So when a timer ends it plays a chime AND
       flashes a full-window "Time's up!" (visible whatever the audio does); a one-time hint reminds the teacher about Share audio, with a Test sound button.
    4. Microphone: ClassIn is already using the mic for the lesson, so a second use may be refused — the Noise Meter says what to do instead of just failing.
-   The pieces app.js calls (TD_BOARD.timerDone / audioHint / micHelp) are no-ops outside the ClassIn edition. */
+   The pieces app.js calls (TD_BOARD.timerDone / audioHint / micHelp) are no-ops anywhere else. */
 (function(){
   'use strict';
-  var E = window.TD_EDITION; if(!E || !E.classin) { window.TD_BOARD = { timerDone:function(){}, audioHint:function(){}, micHelp:function(){ return false; } }; return; }
+  var E = window.TD_PLATFORM; if(!E || E.id !== 'classin') { window.TD_BOARD = { timerDone:function(){}, audioHint:function(){}, micHelp:function(){ return false; } }; return; }
   var S = (typeof STRINGS !== 'undefined') ? STRINGS : {};   // STRINGS is a top-level const in app.js, so it is NOT window.STRINGS
   Object.assign(S, {
     board_bigger:  { en:'Bigger', vi:'Lớn hơn' }, board_smaller: { en:'Smaller', vi:'Nhỏ hơn' },
@@ -76,7 +76,7 @@
     btn('A−', tx('board_smaller'), function(){ setUser(getUser() - 0.1); }); btn('A+', tx('board_bigger'), function(){ setUser(getUser() + 0.1); });
     btn('⛶', tx('board_full'), function(){ var d = document, r = d.fullscreenElement ? d.exitFullscreen() : d.documentElement.requestFullscreen(); if(r && r.catch) r.catch(function(){ toast(tx('board_full_fail'), 5200); }); });
     btn('🔊', tx('board_sound'), testSound);
-    if(showAll) btn('☰', tx('board_all'), function(){ location.href = location.pathname + '?edition=classin'; });
+    if(showAll) btn('☰', tx('board_all'), function(){ location.href = location.pathname; });
     document.body.appendChild(bar);
     var idle = 0; function wake(){ bar.classList.remove('idle'); clearTimeout(idle); idle = setTimeout(function(){ bar.classList.add('idle'); }, 3500); }
     ['pointermove', 'pointerdown', 'touchstart', 'keydown'].forEach(function(ev){ document.addEventListener(ev, wake, { passive:true }); }); wake();

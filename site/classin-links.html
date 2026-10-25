@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="td-edition" content="classin">
 <title>TeachersDeck × ClassIn — links</title>
 <style>
   :root{ --bg:#10151d; --card:#18202b; --line:#2a3544; --txt:#eef1f5; --lo:#9aa6b6; --amber:#e8a33d; }
@@ -76,10 +75,10 @@
   function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]; }); }
 
   function makeUrl(root, w, params, common){
-    var q = ['edition=classin']; if(w) q.push('w=' + encodeURIComponent(w));
+    var q = []; if(w) q.push('w=' + encodeURIComponent(w));
     Object.keys(params || {}).forEach(function(k){ var v = params[k]; if(v !== '' && v != null) q.push(k + '=' + encodeURIComponent(v).replace(/%7E/g, '~').replace(/%2C/g, ',').replace(/%7C/g, '|')); });
     Object.keys(common || {}).forEach(function(k){ if(common[k]) q.push(k + '=' + encodeURIComponent(common[k])); });
-    return root.replace(/\/?$/, '/') + 'index.html?' + q.join('&');
+    return root.replace(/\/?$/, '/') + 'index.html' + (q.length ? '?' + q.join('&') : '');
   }
   function qrSvg(url, cell){ try{ var qr = qrcode(0, 'M'); qr.addData(url); qr.make(); return qr.createSvgTag(cell || 4, 2); }catch(e){ return '<small>QR: link too long</small>'; } }
   function copy(text, btn){ var done = function(){ if(btn){ var o = btn.textContent; btn.textContent = T('copied'); setTimeout(function(){ btn.textContent = o; }, 1800); } };

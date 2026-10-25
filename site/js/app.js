@@ -7,6 +7,12 @@
 
 const LS_KEY = 'ww_state_v1';
 
+/* Platform builds — TeachersDeck for ClassIn and TeachersDeck for Canvas (PLATFORMS.md). tools/build_platform.py puts
+   the platform's own js/platform.js first on the page, and that file sets window.TD_PLATFORM. The extension, the web
+   version and UniDeck have no such file, so PF is null there and every "platform:" hook in this file does nothing. */
+const PF = window.TD_PLATFORM || null;
+const pfPreset = id => (PF && PF.presetFor) ? PF.presetFor(id) : null;   // a ClassIn link's preset for this widget, or null
+
 // Feature flag for enterprise-tier-only UI (school/company logo upload,
 // "open drawers on hover"). Off for now — hidden from index.html and gated
 // off here; flip to true (and restore the hidden markup) to re-enable.
@@ -155,7 +161,8 @@ if(!state.scoreboard){
   ];
 }
 if(!state.lang) state.lang = 'en';
-if(window.TD_EDITION && TD_EDITION.lang) state.lang = TD_EDITION.lang;   // ClassIn port: ?lang=vi
+if(PF && PF.lang) state.lang = PF.lang;   // platform: ?lang= on a ClassIn link, or the Canvas launch's locale
+if(!state.school) state.school = null;   // platform (Canvas): { schoolId, schoolName, pro }, kept by watchMySchool()
 if(!state.langPair) state.langPair = ['en','vi'];
 if(!state.dockVisible) state.dockVisible = {};
 if(!state.calendarEvents) state.calendarEvents = [];
@@ -229,7 +236,13 @@ Object.keys(state.pillPlacement).forEach(id=>{
   if(state.pillPlacement[id] !== 'hidden') state.pillPlacement[id] = 'top'; // collapse old topLeft/topRight values
 });
 
-const APP_VERSION = '0.21.0';
+/* Which app this is: this app's own js/edition.js (the first script on the page) sets window.DECK_EDITION — the app's
+   name, its version and the edition. UNI = the university edition (UniDeck); U(schoolText, uniText) picks the wording
+   for the current edition; APP = the app's name for anything shown to the user. This file is shared with UniDeck's copy
+   of the app (teachersdeck/unideck, tools/sync_shared.py): edit it here, keep one-app-only behaviour behind UNI or U(). */
+const ED = window.DECK_EDITION || { name: 'TeachersDeck', version: '0.0.0', uni: false };
+const UNI = !!ED.uni, APP = ED.name || 'TeachersDeck', U = (school, uni) => (UNI ? uni : school);
+const APP_VERSION = ED.version;
 
 /* ---------------- Students with Vietnamese-format names (v0.19.0) ----------------
    state.students = [{ id, fam, mid, giv, en }] — family name (Họ), middle name (Tên đệm), given name (Tên) and an OPTIONAL English name.
@@ -313,9 +326,9 @@ if(!state.nhLayoutV21){ state.nhLayoutV21 = true; const nl = state.layout && sta
    effect the next time that copy checks in (recheckLicenseIfNeeded,
    called on every app launch, throttled to once a day).
 
-   validateLicenseKeyFormat() below is kept as an instant client-side
-   "does this even look like a real key" pre-check before bothering
-   the server — the server's answer is always the authoritative one.
+   validateLicenseKeyFormat() below is only an instant client-side
+   shape check before bothering the server; the server alone decides
+   whether a key is genuine.
    Licensing uses plain fetch(), not the Firebase SDK TDCloud/Cloud
    Class loads, so it keeps working even in the packed Chrome-extension
    build where that SDK load is blocked by Manifest V3's CSP.
@@ -327,8 +340,10 @@ if(!state.nhLayoutV21){ state.nhLayoutV21 = true; const nl = state.layout && sta
    ========================================================= */
 // Customers fill this out first.
 const ORDER_FORM_URL = 'https://forms.gle/SGUgGpgLyEjNu5iS8';
-const PRO_PRICE_USD = 19;              // TODO: set your real one-time price
-const PRO_PRICE_VND = 990000;          // TODO: set your real VND price
+// v2.3.0: real subscription pricing (official pricing sheet). VND-only — the old one-time
+// PRO_PRICE_USD/PRO_PRICE_VND pair is gone; see backend/functions/src/license.js for the
+// matching billingCycle/expiresAt fields this prices against.
+const PRO_PRICING_VND = { monthly: 240000, annual: 2100000, founding: 1300000 };
 
 // --- Payment method 1: HSBC VietQR (bank transfer, shown first) ---
 // BETA BUILD: the account details below are intentionally blank, so the VietQR panel
@@ -349,51 +364,30 @@ const HSBC_BRANCH_ADDRESS = '';
 const STRIPE_PAYMENT_LINK = '';        // TODO: e.g. 'https://buy.stripe.com/xxxxxxxx'
 const CARD_PROCESSOR_LABEL = 'Card (Stripe)'; // change if using a different processor
 
-// Widgets that require Pro. Edit freely — this is the only place the split is
-// defined.
-// TESTING MODE (v0.10.1, this chat): everything unlocked for the 20-copy test
-// distribution, so testers aren't blocked by licensing while trying widgets.
-// The real, live split — original 10 Pro widgets + Wave 1's 15 + Lesson
-// Planner/Name Picker/Meet — is kept here commented out so re-locking for the
-// next real release is a one-line swap:
-// const PRO_WIDGET_IDS = ['traffic','dice','checklist','scoreboard','poll','noise','music','videoplayer','soundboard','games',
-//   'attendance','groupmaker','exitticket','agenda','qrcode','countdown','hallpass','readinglog','ttsreader','unitconverter','announcements','instructions','convocards','idiomday','grammarref',
-//   'lessonplanner','namepicker','meet'];
-const PRO_WIDGET_IDS = [];
-
-// TESTING MODE (v0.10.1, this chat): isPro() forced true so the license-gated,
-// non-widget Pro features (custom background photo, custom school logo,
-// left/right drawer customization) are also unlocked for testers, on top of
-// the PRO_WIDGET_IDS override above. Swap the two lines below back for the
-// next real release, to require an actual activated license again.
-// function isPro(){ return !!(state.license && state.license.pro); }
-function isPro(){ return true; }
+// ---- Pro gate (v0.21.3) — the decided split; reasons in PRO-TIERS.md at the repository root ----
+// PRO_GATE_ENABLED is THE switch. While it is false (testing / beta distribution) nothing is locked: every widget and
+// every Pro feature (background photo, school logo, drawer customisation, Office full screen) is open, exactly as in the
+// earlier testing mode. Set it to true at launch to require an activated licence. ?progate=1 in the address previews the
+// gate on this device without changing it. Never gated: anything in the teacher → student → parent → admin loop.
+const PRO_GATE_ENABLED = false;
+const PRO_GATE = PRO_GATE_ENABLED || new URLSearchParams(location.search).get('progate') === '1';
+const PRO_WIDGETS_DECIDED = [
+  'lessonplanner', 'games', 'scoreboard', 'poll', 'exitticket', 'groupmaker', 'noise', 'music', 'videoplayer', 'soundboard', 'meet',
+  'qrcode', 'hallpass', 'readinglog', 'ttsreader', 'unitconverter', 'announcements', 'instructions', 'convocards', 'idiomday', 'grammarref',
+  'drawdeck'   // decided 2026-10-24, per the DrawDeck scope doc's decision #1
+];
+const PRO_WIDGET_IDS = PRO_GATE ? PRO_WIDGETS_DECIDED : [];
+function isPro(){ return !PRO_GATE || !!(state.license && state.license.pro) || !!(PF && PF.schoolPro && state.school && state.school.pro); }   // platform (Canvas): school-level Pro
 function isProWidget(id){ return PRO_WIDGET_IDS.includes(id); }
 
 // ---- License key format: TDPRO-AAAA-BBBB-CCCC ----------------------------
-// The 4th group is a checksum of the first three, salted. This lets the
-// client instantly reject a mistyped/made-up key before ever contacting the
-// server, and lets the license backend mint keys in the same format. It is
-// NOT what makes a key valid, though — see activateLicenseOnline below.
-// Keep PRO_LICENSE_SALT identical to the backend's copy.
-const PRO_LICENSE_SALT = 'teachersdeck-pro-2026';
-function licenseChecksum(parts){
-  let h = 0;
-  const str = PRO_LICENSE_SALT + parts.join('-');
-  for(let i=0;i<str.length;i++){ h = ((h<<5) - h + str.charCodeAt(i)) | 0; }
-  return Math.abs(h).toString(36).toUpperCase().padStart(4,'0').slice(0,4);
-}
-function generateLicenseKey(){
-  const rnd = ()=> Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g,'').padEnd(4,'0').slice(0,4);
-  const a = rnd(), b = rnd();
-  const c = licenseChecksum([a,b]);
-  return `TDPRO-${a}-${b}-${c}`;
-}
+// A shape check only, so a mistyped key is rejected instantly without a round
+// trip. It says nothing about whether a key is genuine: keys are minted and
+// verified by the license backend (activateLicenseOnline below), which keeps the
+// checksum rules server-side. Nothing in this file can produce a valid key.
 function validateLicenseKeyFormat(key){
   if(!key) return false;
-  const m = /^TDPRO-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})$/.exec(key.trim().toUpperCase());
-  if(!m) return false;
-  return licenseChecksum([m[1],m[2]]) === m[3];
+  return /^TDPRO-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(key.trim().toUpperCase());
 }
 
 // ---- Export watermarking, tied to the active Pro license -----------------
@@ -425,6 +419,20 @@ function exportWatermarkToken(){
   const key = (state.license && state.license.key) || 'UNLICENSED';
   return watermarkHash(`${key}::${deviceId()}`);
 }
+// v0.21.4: every export is watermarked the same way (js/watermark.js — the identical hash and salt as above).
+if(window.Watermark) Watermark.configure({ identity: ()=> `${(state.license && state.license.key) || 'UNLICENSED'}::${deviceId()}` });
+/* ---- Official-build check (anti-theft, v0.21.4) ----
+   The extension ID comes from the manifest's "key" (dliphbbeinjlpcnpenllgaddihpkamcl), so a copy republished under another ID shows a notice and
+   cannot activate Pro. Update OFFICIAL_IDS if the Chrome Web Store assigns a different ID when you publish. Pages served
+   outside an extension (demo/testing over http) are not checked. */
+const OFFICIAL_IDS = ['dliphbbeinjlpcnpenllgaddihpkamcl'];
+function isOfficialBuild(){ try{ return !(window.chrome && chrome.runtime && chrome.runtime.id) || OFFICIAL_IDS.includes(chrome.runtime.id); }catch(e){ return true; } }
+if(!isOfficialBuild()) document.addEventListener('DOMContentLoaded', ()=>{
+  const n = document.createElement('div'); n.className = 'unofficial-build'; n.setAttribute('role', 'alert');
+  n.textContent = 'This copy of TeachersDeck is not an official build. Pro and licence activation are switched off. Please install the official version.';
+  document.body.prepend(n);
+});
+
 
 // ---- Online activation against the license Cloud Functions ---------------
 const LICENSE_FN_REGION = 'us-central1';
@@ -464,6 +472,7 @@ async function callLicenseFn(name, body){
   if(!res.ok){
     const e = new Error(data.error || `HTTP ${res.status}`);
     e.status = res.status;
+    e.code = data.code;
     throw e;
   }
   return data;
@@ -472,6 +481,7 @@ async function callLicenseFn(name, body){
 // Activates a key on THIS device. Resolves to { ok, reason } rather than
 // throwing, so callers don't need try/catch for the expected failure cases.
 async function activateLicenseOnline(rawKey){
+  if(!isOfficialBuild()) return { ok:false, reason:'unofficial' };
   const key = (rawKey||'').trim().toUpperCase();
   if(!validateLicenseKeyFormat(key)) return { ok:false, reason:'format' };
   try{
@@ -482,7 +492,7 @@ async function activateLicenseOnline(rawKey){
     if(e.message === 'not-configured') return { ok:false, reason:'not-configured' };
     if(e.message === 'network') return { ok:false, reason:'network' };
     if(e.status === 409) return { ok:false, reason:'device-mismatch' };
-    if(e.status === 403) return { ok:false, reason:'revoked' };
+    if(e.status === 403) return { ok:false, reason: e.code === 'expired' ? 'expired' : 'revoked' };
     if(e.status === 404) return { ok:false, reason:'not-found' };
     return { ok:false, reason:'network' };
   }
@@ -504,7 +514,7 @@ async function recheckLicenseIfNeeded(){
     } else {
       setLicense({ key: lic.key, pro:false });
       buildProStatus();
-      toast(t('pro_license_revoked'));
+      toast(t(data.reason === 'expired' ? 'pro_license_expired' : 'pro_license_revoked'));
     }
   } catch(e){
     if(lic.lastCheck && (Date.now() - lic.lastCheck) > LICENSE_OFFLINE_GRACE_MS){
@@ -926,9 +936,10 @@ const STRINGS = {
   pro_license_checking: { en:'Checking…', vi:'Đang kiểm tra…' },
   pro_license_device_mismatch: { en:'That key is already activated on a different device. If this is your own computer (for example you reinstalled or reloaded the extension), ask us to release the key and try again.', vi:'Mã này đã được kích hoạt trên một thiết bị khác. Nếu đây là máy của bạn (ví dụ bạn đã cài lại hoặc tải lại tiện ích), hãy nhờ chúng tôi giải phóng mã rồi thử lại.' },
   pro_license_revoked: { en:'This license is no longer valid — Pro features have been turned off', vi:'Mã bản quyền này không còn hiệu lực — các tính năng Pro đã bị tắt' },
+  pro_license_expired: { en:'Your subscription has expired — renew to keep Pro features', vi:'Gói đăng ký của bạn đã hết hạn — gia hạn để tiếp tục dùng tính năng Pro' },
   pro_license_network_error: { en:'Couldn\'t reach the license server — check your connection and try again', vi:'Không thể kết nối máy chủ cấp phép — kiểm tra kết nối mạng và thử lại' },
   pro_modal_title: { en:'Upgrade to TeachersDeck Pro', vi:'Nâng cấp lên TeachersDeck Pro' },
-  pro_modal_subtitle: { en:'One-time payment, no subscription. Unlocks on this browser.', vi:'Thanh toán một lần, không phải trả phí định kỳ. Mở khóa trên trình duyệt này.' },
+  pro_modal_subtitle: { en:'Monthly or annual subscription. Unlocks on this browser.', vi:'Đăng ký theo tháng hoặc theo năm. Mở khóa trên trình duyệt này.' },
   pro_close: { en:'Close', vi:'Đóng' },
   plan_free_title: { en:'Free', vi:'Miễn phí' },
   plan_pro_title: { en:'Pro', vi:'Pro' },
@@ -1184,8 +1195,6 @@ Object.assign(STRINGS, {
   nh_err_students:     { en:'Pick at least one student.', vi:'Hãy chọn ít nhất một học sinh.' },
   nh_err_mood:         { en:'Pick a smiley or a frowny face.', vi:'Hãy chọn mặt cười hoặc mặt buồn.' },
   nh_err_frowny_text:  { en:'A frowny note needs a few words so the parent knows what happened.', vi:'Ghi chú mặt buồn cần vài dòng để phụ huynh biết chuyện gì đã xảy ra.' },
-  nh_history:          { en:'Sent notes', vi:'Ghi chú đã gửi' },
-  nh_filter_all:       { en:'All students', vi:'Tất cả học sinh' },
   nh_none_yet:         { en:'No notes sent yet.', vi:'Chưa gửi ghi chú nào.' },
   nh_unread_count:     { en:'{n} unread', vi:'{n} chưa đọc' },
   nh_status_sent:      { en:'📨 Sent', vi:'📨 Đã gửi' },
@@ -1198,6 +1207,9 @@ Object.assign(STRINGS, {
   nh_backend_old:      { en:'Notes Home needs the v1.3.0 backend update. Ask whoever manages your Firebase project to deploy it.', vi:'Ghi chú gửi phụ huynh cần bản cập nhật backend v1.3.0. Hãy nhờ người quản lý dự án Firebase triển khai.' },
 
   stats:          { en:'📈 Stats & XP', vi:'Thống kê & XP' },
+  badgecase:      { en:'🏅 My Badge Display Case', vi:'🏅 Tủ huy hiệu của tôi' },
+  scrapreview:    { en:'📒 Scrapbook Review', vi:'📒 Duyệt sổ lưu niệm' },
+  boardreview:    { en:'📋 Board Assignments', vi:'📋 Bài giao trên bảng' },
   xp_pill_tip:    { en:'Stats & XP — click to open', vi:'Thống kê & XP — nhấn để mở' },
   show_xp_label:  { en:'Show XP in the header', vi:'Hiện XP trên thanh tiêu đề' },
   stats_range:    { en:'Time range', vi:'Khoảng thời gian' },
@@ -1267,7 +1279,6 @@ Object.assign(STRINGS, {
 });
 /* v0.15.0 strings: Class Activity widget, roster activity badges, Notes Home. Languages not listed fall back to English. */
 Object.assign(STRINGS, {
-  classactivity:   { en:'📊 Class Activity', vi:'📊 Hoạt động của lớp' },
   ca_need_class:   { en:'Sign in and link a class in Cloud Class to see what your students are doing.', vi:'Hãy đăng nhập và liên kết một lớp trong Cloud Class để xem học sinh đang làm gì.' },
   ca_this_week:    { en:'This week · whole class', vi:'Tuần này · cả lớp' },
   ca_active:       { en:'Active', vi:'Hoạt động' },
@@ -1333,7 +1344,7 @@ const idb = {
       // fails silently. The version bump forces onupgradeneeded to run once
       // for everybody; the per-store `contains()` checks below are already
       // idempotent, so this is safe to bump again in the future the same way.
-      const req = indexedDB.open('TeachersDeck', 3);
+      const req = indexedDB.open('TeachersDeck', 4);
       req.onupgradeneeded = e=>{
         const db = e.target.result;
         if(!db.objectStoreNames.contains('files')) db.createObjectStore('files',{keyPath:'id'});
@@ -1343,6 +1354,7 @@ const idb = {
         if(!db.objectStoreNames.contains('videos')) db.createObjectStore('videos',{keyPath:'id'});
         if(!db.objectStoreNames.contains('sounds')) db.createObjectStore('sounds',{keyPath:'id'});
         if(!db.objectStoreNames.contains('gdocs')) db.createObjectStore('gdocs',{keyPath:'sha'});   // Office file hash -> converted Google file (v0.13.0)
+        if(!db.objectStoreNames.contains('boards')) db.createObjectStore('boards',{keyPath:'id'});   // DrawDeck boards (v0.22.0)
       };
       req.onsuccess = e=>{
         const db = e.target.result;
@@ -1402,6 +1414,7 @@ function toast(msg, ms){
 
 /* ---------------- Icons (inline, stroke-based) ---------------- */
 const ICONS = {
+  draw:`<path d="M4 20l1.2-4.3L16 5l3 3L8.3 18.8 4 20Z"/><path d="M14 7l3 3"/><path d="M3 4h6M3 8h3" opacity=".55"/>`,
   stats:`<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>`,
   clock:`<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>`,
   timer:`<path d="M10 2h4"/><path d="M12 6v0"/><circle cx="12" cy="14" r="8"/><path d="M12 14V9"/><path d="M18 6l1.5-1.5"/>`,
@@ -1449,6 +1462,29 @@ function iconSvg(name, cls=''){
 
 /* ---------------- Widget registry ---------------- */
 /* Each widget: id, label, icon, w/h default, render(body, ctx) */
+/* DrawDeck (v0.22.0): full-screen whiteboard + mind map + flowchart. The widget lives in js/drawdeck.js; this is only the glue. */
+Object.assign(STRINGS, DrawDeck.strings);
+function renderDrawDeck(body, ctx){
+  return DrawDeck.mount(body, {
+    t, toast,
+    close: ()=>toggleWidget('drawdeck'),
+    idb,
+    watermark: (typeof Watermark !== 'undefined') ? Watermark : null,
+    download: (blob, name)=>{
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+    },
+    // "Share this page with the class" (v0.26.0) needs a linked cloud class to share into.
+    cloudClassId: () => (typeof TDCloud !== 'undefined' && TDCloud.isConfigured() && TDCloud.getSession() && state.cloudClassId) ? state.cloudClassId : null,
+    share: (dataUrl) => TDCloud.shareBoard(state.cloudClassId, dataUrl),
+    stopShare: () => TDCloud.stopSharingBoard(state.cloudClassId),
+    // "Assign this page to students" (v0.29.0, backend v2.9.0) — DrawDeck scope step D.
+    assignBoard: (title, thumbDataUrl, imageDataUrl) => TDCloud.assignBoard(state.cloudClassId, title, thumbDataUrl, imageDataUrl)
+  });
+}
+
 const WIDGETS = [
   { id:'clock', cat:'time', labelKey:'clock', icon:'clock', w:200, h:222, render:renderClock },
   { id:'timer', cat:'time', labelKey:'timer', icon:'timer', w:220, h:210, render:renderTimer },
@@ -1487,10 +1523,14 @@ const WIDGETS = [
   { id:'classbuilder', cat:'tools', labelKey:'classbuilder', icon:'people', w:580, h:640, render:renderClassBuilder },   // v0.19.0
   { id:'lessonplanner', cat:'cloud', labelKey:'lessonplanner', icon:'lessonplan', w:330, h:610, render:renderLessonPlanner, pro:true },
   { id:'cloudclass', cat:'cloud', labelKey:'cloudclass', icon:'cloud', w:420, h:580, render:renderCloudClass },
-  { id:'rewardpoints', cat:'cloud', labelKey:'rewardpoints', icon:'trophy', w:620, h:540, render:renderRewardPoints },   // v0.21.0
+  { id:'rewardpoints', cat:'cloud', labelKey:'rewardpoints', icon:'trophy', w:680, h:580, render:renderRewardPoints },   // v0.21.0 (v0.22.0: gained a Badges tab — id kept as 'rewardpoints' so saved layouts and docks carry over)
   { id:'noteshome', cat:'cloud', labelKey:'noteshome', icon:'mail', w:840, h:600, render:renderNotesHome },
   { id:'classactivity', cat:'cloud', labelKey:'classactivity', icon:'stats', w:380, h:560, render:renderStudentStats, full:true },   // v0.20.0: Student Stats — full screen (id kept as 'classactivity' so saved layouts and docks carry over)
-  { id:'stats', cat:'tools', labelKey:'stats', icon:'stats', w:360, h:540, render:renderStats, full:true }
+  { id:'stats', cat:'tools', labelKey:'stats', icon:'stats', w:360, h:540, render:renderStats, full:true },
+  { id:'badgecase', cat:'tools', labelKey:'badgecase', icon:'trophy', w:420, h:560, render:renderBadgeCase, full:true },   // v0.22.1: the teacher's own badges, split out of My Stats & XP
+  { id:'scrapreview', cat:'cloud', labelKey:'scrapreview', icon:'clipboard', w:420, h:560, render:renderScrapReview },   // v0.27.0: approve/hide Scrapdeck pages students shared (M3)
+  { id:'boardreview', cat:'cloud', labelKey:'boardreview', icon:'report', w:420, h:560, render:renderBoardReview },   // v0.29.0 (backend v2.9.0): review Board Assignments submissions and award XP (DrawDeck scope step D)
+  { id:'drawdeck', cat:'tools', labelKey:'drawdeck', icon:'draw', w:380, h:560, render:renderDrawDeck, full:true }   // v0.22.0: DrawDeck — whiteboard, mind map, flowchart (full screen)
 ];
 
 const wall = document.getElementById('wall');
@@ -1508,10 +1548,10 @@ const widgetEls = {}; // id -> {el, cleanup}
 const WPREF_KEY = 'td_widgets_v1';
 const wprefs = (() => { let s = null; try{ s = JSON.parse(localStorage.getItem(WPREF_KEY)); }catch(e){} s = (s && typeof s === 'object') ? s : {}; return { curated:!!s.curated, off:{ ...(s.off || {}) }, parked:{ ...(s.parked || {}) } }; })();
 const saveWprefs = () => { try{ localStorage.setItem(WPREF_KEY, JSON.stringify(wprefs)); }catch(e){} };
-const isOff = id => !!wprefs.off[id] || !!(window.TD_EDITION && TD_EDITION.hides(id));   // ClassIn port: edition-hidden widgets (js/edition.js)
+const isOff = id => !!wprefs.off[id] || !!(PF && PF.hides(id));   // platform: the widgets this platform leaves out
 const WIDGET_TIERS = {
   core:   ['classbuilder', 'clock', 'timer', 'namepicker', 'groupmaker', 'scoreboard', 'poll', 'attendance', 'traffic', 'noise', 'agenda', 'files', 'calendar', 'assignments', 'progressreports', 'lessonplanner', 'cloudclass', 'rewardpoints', 'noteshome'],
-  keep:   ['checklist', 'games', 'music', 'hallpass', 'qrcode', 'ttsreader', 'convocards', 'idiomday', 'grammarref', 'instructions', 'classactivity', 'stats'],
+  keep:   ['checklist', 'games', 'music', 'hallpass', 'qrcode', 'ttsreader', 'convocards', 'idiomday', 'grammarref', 'instructions', 'classactivity', 'stats', 'badgecase', 'drawdeck', 'scrapreview', 'boardreview'],
   shelve: ['stopwatch', 'dice', 'videoplayer', 'soundboard', 'exitticket', 'meet', 'countdown', 'unitconverter', 'announcements', 'readinglog']
 };
 const tierOf = id => Object.keys(WIDGET_TIERS).find(k => WIDGET_TIERS[k].includes(id)) || 'keep';
@@ -1521,7 +1561,7 @@ function widgetUsage(id){                         // what the teacher has actual
   return { opens, secs, o30, s30, last, any: opens > 0 || secs >= 30 || !!state.active[id] };
 }
 function curateWidgetsOnce(){                     // first launch of this version: tidy away the recommended widgets the teacher has never touched
-  if(wprefs.curated || (window.TD_EDITION && TD_EDITION.classin)) return 0;   // ClassIn port: a ClassIn link can open any board widget
+  if(wprefs.curated || (PF && PF.fixedWidgets)) return 0;   // platform: its own widget list is the curation
   let n = 0; WIDGET_TIERS.shelve.forEach(id => { if(WIDGETS.some(w => w.id === id) && !widgetUsage(id).any){ wprefs.off[id] = true; n++; } });
   wprefs.curated = true; saveWprefs(); return n;
 }
@@ -1583,8 +1623,8 @@ function wmRender(){
   const fmtD = k => new Date(k + 'T12:00').toLocaleDateString(state.lang || 'en', { month:'short', day:'numeric', year:'numeric' });
   const row = w => { const tier = tierOf(w.id), u = widgetUsage(w.id), isoff = isOff(w.id);
     const use = (u.o30 || u.s30) ? t('wm_used', { n:u.o30, t:fmtDur(u.s30) }) : u.last ? t('wm_used_old', { date:fmtD(u.last) }) : t('wm_used_none');
-    return `<label class="wm-row${isoff ? ' off' : ''}"><span class="wm-tx"><b>${xEsc(widgetLabel(w.labelKey))}</b><em class="wm-tag t-${tier}">${t('wm_tag_' + tier)}</em>${tier === 'shelve' && !isoff && u.any ? `<em class="wm-tag t-use">${t('wm_you_use')}</em>` : ''}
-      <small>${xEsc(t('wc_' + w.id))}</small><small class="wm-use">${xEsc(use)}</small></span><span class="wm-sw"><input type="checkbox" data-wid="${w.id}" ${isoff ? '' : 'checked'} aria-label="${xEsc(widgetLabel(w.labelKey))}"><i></i></span></label>`; };
+    return `<label class="wm-row${isoff ? ' off' : ''}"><span class="wm-tx"><b>${xEsc(widgetLabel(w.labelKey))}</b><span class="wm-info" tabindex="0" title="${xEsc(t('wc_' + w.id))}" aria-label="${xEsc(t('wc_' + w.id))}">ⓘ</span><em class="wm-tag t-${tier}">${t('wm_tag_' + tier)}</em>${tier === 'shelve' && !isoff && u.any ? `<em class="wm-tag t-use">${t('wm_you_use')}</em>` : ''}
+      <small class="wm-use">${xEsc(use)}</small></span><span class="wm-sw"><input type="checkbox" data-wid="${w.id}" ${isoff ? '' : 'checked'} aria-label="${xEsc(widgetLabel(w.labelKey))}"><i></i></span></label>`; };
   b.querySelector('#wm-body').innerHTML = ['shelve', 'core', 'keep'].map(tier => { const ws = WIDGETS.filter(w => tierOf(w.id) === tier); if(!ws.length) return '';
     return `<h3 class="wm-h t-${tier}">${t('wm_sec_' + tier)} <span>${ws.filter(w => !isOff(w.id)).length}/${ws.length}</span></h3><p class="wm-why">${t('wm_why_' + tier)}</p><div class="wm-list">${ws.map(row).join('')}</div>`; }).join('');
   b.querySelector('#wm-body').scrollTop = keep;
@@ -2032,7 +2072,7 @@ function rerenderWidget(id){
   if(typeof rec.cleanup === 'function') rec.cleanup();
   const body = rec.el.querySelector('.widget-body');
   body.innerHTML = '';
-  rec.cleanup = def.render(body, { id, toast, preset: (window.TD_EDITION && TD_EDITION.presetFor(id)) || null });
+  rec.cleanup = def.render(body, { id, toast, preset: pfPreset(id) });
 }
 
 const CAL_SYSTEM_OPTIONS = [
@@ -2076,6 +2116,7 @@ function syncDock(){
 
 function openWidget(id){
   if(isOff(id)){ state.active[id] = false; return; }
+  if(isProWidget(id) && !isPro()){ state.active[id] = false; return; }   // v0.21.3: also when a saved layout reopens it (the dock path shows the Pro dialog)
   const def = WIDGETS.find(w=>w.id===id);
   if(!def || widgetEls[id]) { state.active[id]=true; return; }
   state.active[id] = true;
@@ -2129,7 +2170,7 @@ function openWidget(id){
   });
 
   const body = el.querySelector('.widget-body');
-  const cleanup = def.render(body, { id, toast, preset: (window.TD_EDITION && TD_EDITION.presetFor(id)) || null });
+  const cleanup = def.render(body, { id, toast, preset: pfPreset(id) });
   widgetEls[id].cleanup = cleanup;
 }
 
@@ -2366,8 +2407,8 @@ function renderTimer(body, ctx){
     </div>
   `;
   let total = 300, remaining = 300, running=false, iv=null;
-  const pre = ctx && ctx.preset; if(pre){ total = remaining = pre.seconds; }   // ClassIn port: ?min=&sec=
-  if(window.TD_BOARD) TD_BOARD.audioHint();
+  const pre = ctx && ctx.preset; if(pre){ total = remaining = pre.seconds; }   // platform (ClassIn): ?min=&sec=
+  if(window.TD_BOARD) TD_BOARD.audioHint();   // platform (ClassIn): the one-time "Share audio" reminder
   const readout = body.querySelector('.big-readout');
   function render(){
     const m = Math.floor(remaining/60), s = remaining%60;
@@ -2397,7 +2438,7 @@ function renderTimer(body, ctx){
       track('timer', fmtDur(remaining));
       iv = setInterval(()=>{
         remaining--;
-        if(remaining<=0){ remaining=0; setRunning(false); clearInterval(iv); toast(t('time_up')); if(window.TD_BOARD) TD_BOARD.timerDone(); }
+        if(remaining<=0){ remaining=0; setRunning(false); clearInterval(iv); toast(t('time_up')); if(window.TD_BOARD) TD_BOARD.timerDone(); }   // platform (ClassIn): chime + full-window cue
         render();
       },1000);
     } else clearInterval(iv);
@@ -2409,7 +2450,7 @@ function renderTimer(body, ctx){
     clearInterval(iv); setRunning(false); total = 0; remaining = 0; render();
   });
   render();
-  if(pre && pre.go) startBtn.click();   // ClassIn port: ?go=1
+  if(pre && pre.go) startBtn.click();   // platform (ClassIn): ?go=1
   return ()=>clearInterval(iv);
 }
 
@@ -2469,7 +2510,7 @@ function renderStopwatch(body, ctx){
   setRunning(false);
   render();
   renderLaps();
-  if(ctx && ctx.preset && ctx.preset.go) startBtn.click();   // ClassIn port: ?go=1
+  if(ctx && ctx.preset && ctx.preset.go) startBtn.click();   // platform (ClassIn): ?go=1
   return ()=>clearInterval(iv);
 }
 
@@ -2492,7 +2533,7 @@ function renderTraffic(body, ctx){
       track('traffic', l.dataset.c);
     });
   });
-  { const pl = ctx && ctx.preset && ctx.preset.light; const lamp = pl && body.querySelector('.traffic-lamp.' + pl); if(lamp) lamp.classList.add('on'); }   // ClassIn port: ?light=
+  { const pl = ctx && ctx.preset && ctx.preset.light; const lamp = pl && body.querySelector('.traffic-lamp.' + pl); if(lamp) lamp.classList.add('on'); }   // platform (ClassIn): ?light=
   return null;
 }
 
@@ -2921,6 +2962,8 @@ Object.assign(STRINGS, {
   wc_scoreboard:      { en:'Team scores for games and competitions.', vi:'Điểm theo đội cho trò chơi và thi đua.' },
   wc_poll:            { en:'Fast check-for-understanding; also covers exit tickets.', vi:'Kiểm tra mức hiểu nhanh; cũng thay được Phiếu ra cửa.' },
   wc_attendance:      { en:'Daily roll call, saved per class.', vi:'Điểm danh hằng ngày, lưu theo lớp.' },
+  wc_scrapreview:     { en:'Approve or hide scrapbook pages students shared from StudentDeck.', vi:'Duyệt hoặc ẩn các trang sổ lưu niệm học sinh chia sẻ từ StudentDeck.' },
+  wc_boardreview:     { en:'Review what students drew on a DrawDeck page you assigned, and award XP.', vi:'Duyệt những gì học sinh vẽ trên trang DrawDeck bạn đã giao, và trao XP.' },
   wc_traffic:         { en:'Zero-setup signal for noise and behaviour.', vi:'Tín hiệu về độ ồn và nề nếp, không cần thiết lập.' },
   wc_noise:           { en:'Live noise meter on the board; students self-regulate.', vi:'Đo độ ồn trực tiếp trên bảng; học sinh tự điều chỉnh.' },
   wc_agenda:          { en:'Schedule, objective and do-now in one board.', vi:'Lịch học, mục tiêu và việc làm ngay trên một bảng.' },
@@ -2941,8 +2984,8 @@ Object.assign(STRINGS, {
   wc_idiomday:        { en:'A daily idiom to start the lesson.', vi:'Một thành ngữ mỗi ngày để mở đầu bài học.' },
   wc_grammarref:      { en:'Quick grammar reference for the board.', vi:'Tra cứu nhanh ngữ pháp trên bảng.' },
   wc_instructions:    { en:'Step-by-step directions, with a Vietnamese line.', vi:'Hướng dẫn từng bước, kèm dòng tiếng Việt.' },
-  wc_classactivity:   { en:'StudentDeck dashboard: who is active, streaks, homework.', vi:'Bảng StudentDeck: ai đang hoạt động, chuỗi ngày, bài tập.' },
-  wc_stats:           { en:'Your XP, streaks, badges and activity history.', vi:'XP, chuỗi ngày, huy hiệu và lịch sử hoạt động của bạn.' },
+  wc_stats:           { en:'Your XP, streaks and activity history.', vi:'XP, chuỗi ngày và lịch sử hoạt động của bạn.' },
+  wc_badgecase:       { en:'Your own badge display case — every badge you’ve earned, on shelves.', vi:'Tủ huy hiệu của riêng bạn — mọi huy hiệu bạn đã đạt, trưng bày trên kệ.' },
   wc_stopwatch:       { en:'Rarely needed — Timer covers almost every case.', vi:'Ít khi cần — Hẹn giờ đã đáp ứng gần như mọi trường hợp.' },
   wc_dice:            { en:'A novelty; Name Picker and Group Maker cover classroom randomising.', vi:'Chủ yếu để vui; Chọn tên và Chia nhóm đã lo phần ngẫu nhiên.' },
   wc_videoplayer:     { en:'Overlaps Files (open a link) and the browser; local clips are heavy.', vi:'Trùng với Tệp (mở liên kết) và trình duyệt; video cục bộ khá nặng.' },
@@ -3071,8 +3114,8 @@ const xpSrcLabel = s => STRINGS['xp_src_' + s] ? t('xp_src_' + s) : STRINGS['act
 function dayRec(d = xDayKey(Date.now())){
   return tdx.stats.daily[d] || (tdx.stats.daily[d] = { xp:0, xpBy:{}, timeBy:{}, readEntries:0, readMin:0, lessons:0, assignments:0, attendance:0, acts:{}, opens:{} });
 }
-let statsRedraw = null, readingRedraw = null, filesRedraw = null;
-const refreshStats = () => statsRedraw && statsRedraw();
+let statsRedraw = null, readingRedraw = null, filesRedraw = null, badgeCaseRedraw = null;
+const refreshStats = () => { statsRedraw && statsRedraw(); badgeCaseRedraw && badgeCaseRedraw(); };
 function stat(k, n = 1){ const r = dayRec(); r[k] = (r[k] || 0) + n; xSave(); refreshStats(); }
 
 /* ---------------- v0.16.0 — Activity tracking ----------------
@@ -3155,7 +3198,7 @@ function exportStatsCsv(){
   const head = ['date', 'xp', 'active_seconds', 'document_seconds', 'reading_minutes', ...kinds];
   const rows = days.map(k => { const r = tdx.stats.daily[k]; return [k, r.xp || 0, widgetSecs(r), (r.timeBy || {})[DOC_KEY] || 0, r.readMin || 0, ...kinds.map(a => actCount(r, a))]; });
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([[head, ...rows].map(r => r.join(',')).join('\n')], { type:'text/csv' }));
+  a.href = URL.createObjectURL(new Blob([(window.Watermark ? Watermark.stamp([head, ...rows].map(r => r.join(',')).join('\n')) : [head, ...rows].map(r => r.join(',')).join('\n'))], { type:'text/csv' }));
   a.download = `teachersdeck-stats-${xDayKey(Date.now())}.csv`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
 }
@@ -3211,6 +3254,30 @@ function sxBurst(host, x, y, n = 12){                                 // a littl
     host.appendChild(p); setTimeout(() => p.remove(), 1400); }
 }
 const medalHtml = (b, on) => `<span class="medal t${b.tier}${on ? ' on' : ''}" aria-hidden="true"><span class="mi">${b.icon}</span></span>`;
+/* ---------------- Badge Display Case: shared building blocks ----------------
+   The teacher's own case (renderBadgeCase) and the per-student case inside Badges & Rewards (badgeDetailHtml)
+   draw the same hero-spot + next-up + shelves-by-group layout, from two different badge catalogs (BADGES/
+   bdState() vs SS_BADGES/ssBadgeCtx()) with different field names and a different "earned" test. Each
+   normalizes its own badges into { tier, icon, name, desc, on, progress(0-1), countLine?, earnedLine? } —
+   countLine/earnedLine are optional since the recomputed SS_BADGES engine has no per-badge earn date and no
+   per-badge unit label to show a count against — then calls these to build the markup. */
+function bcTileHtml(b, n){
+  const extra = b.on ? (b.earnedLine ? `<em>${b.earnedLine}</em>` : '')
+    : `<div class="bd-bar sx-xpbar"><i style="width:${Math.round(b.progress * 100)}%"></i></div>${b.countLine ? `<em>${b.countLine}</em>` : ''}`;
+  return `<div class="bd t${b.tier}${b.on ? ' on' : ''}" data-on="${b.on ? 1 : 0}"${n != null ? ` style="--n:${n}"` : ''} title="${xEsc(b.desc)}">${medalHtml(b, b.on)}<b>${xEsc(b.name)}</b><small>${xEsc(b.desc)}</small>${extra}</div>`;
+}
+function bcNextUpHtml(b){
+  return `<div class="bd-nx t${b.tier}">${medalHtml(b, false)}<div><b>${xEsc(b.name)}</b><small>${xEsc(b.desc)}</small><div class="bd-bar sx-xpbar"><i style="width:${Math.round(b.progress * 100)}%"></i></div>${b.countLine ? `<em>${b.countLine}</em>` : ''}</div></div>`;
+}
+function bcHeroHtml(spot, countLabel, extraHtml, emptyLabel){
+  return `<div class="bc-hero">
+      ${spot ? `<span class="bc-spot">${medalHtml(spot, true)}</span><div class="bc-hero-t"><p class="bc-count">${countLabel}</p>${extraHtml || ''}</div>`
+        : `<span class="bc-spot empty" aria-hidden="true">🏅</span><div class="bc-hero-t"><p class="small-hint">${emptyLabel}</p></div>`}
+    </div>`;
+}
+function bcCabinetHtml(shelfRows, filterAttr){   // shelfRows: [[groupLabel, tilesHtml], ...]
+  return `<div class="bgal bc-cabinet"${filterAttr ? ` data-f="${filterAttr}"` : ''}>${shelfRows.map(([label, html]) => `<section class="bc-shelf"><h5>${label}</h5><div class="bd-grid">${html}</div><div class="bc-ledge" aria-hidden="true"></div></section>`).join('')}</div>`;
+}
 const badgeQ = []; let badgeBusy = false;
 function popBadge(b){ badgeQ.push(b); if(!badgeBusy) nextBadgePop(); }
 function nextBadgePop(){
@@ -3244,9 +3311,8 @@ function checkBadges(){
   }
   updateBadgeChip(fresh.length > 0 && !first);
 }
-function openBadges(){                                                // header chip / pop-up click: Stats & XP, scrolled to the Badges card
-  if(!state.active.stats) toggleWidget('stats');
-  setTimeout(() => { const el = document.getElementById('sx-badges'); if(el && el.scrollIntoView) el.scrollIntoView({ behavior:sxStill() ? 'auto' : 'smooth', block:'start' }); }, 120);
+function openBadges(){                                                // header chip / pop-up click: opens the Badge Display Case
+  if(!state.active.badgecase) toggleWidget('badgecase');
 }
 
 const capSeen = new Set();
@@ -3352,11 +3418,23 @@ window.addEventListener('pagehide', ()=>{ if(docStageOpen()) closeDocLog(); xSav
    Everything respects the system "reduce motion" setting. While the pointer is on the page the 10-second refresh waits (a redraw would restart whatever
    is animating under it) and runs as soon as the pointer leaves. */
 function renderStats(body){
-  let range = 'week', metric = 'xp', feedCat = 'all', feedMax = 40, badgeFilter = 'all';
+  let range = 'week', metric = 'xp', feedCat = 'all', feedMax = 40;
   let ci = 0, fx = true, fxCols = false, dirty = false;                    // ci: card number (staggered entrance); fx: play the entrance this time; fxCols: only the trend columns regrow
   const RANGES = [['today', 'stats_today', 0], ['week', 'stats_week', 6], ['month', 'stats_month', 29], ['all', 'stats_all', null]];
   body.innerHTML = `<div class="sx-wrap"><div id="sx-top"></div><div id="sx-main"></div></div>`;
   const dayKeys = () => { const all = Object.keys(tdx.stats.daily), n = RANGES.find(r => r[0] === range)[2]; if(n === null) return all; const cut = xDayKey(Date.now() - n * 864e5); return all.filter(k => k >= cut); };
+  // The period of equal length right before the current range — e.g. "week" compares the last 7 days to the 7 before that.
+  // Powers the trend stoplight on every raw-count tile, same idea as AdminDeck's School Stats (no "all time" equivalent: null).
+  const prevDayKeys = () => { const n = RANGES.find(r => r[0] === range)[2]; if(n === null) return null;
+    const all = Object.keys(tdx.stats.daily), hi = xDayKey(Date.now() - (n + 1) * 864e5), lo = xDayKey(Date.now() - (2 * n + 1) * 864e5);
+    return all.filter(k => k >= lo && k <= hi); };
+  const sumBasic = ks => { const s = { xp:0, acts:0, totalT:0, docT:0, lessons:0, assignments:0, attendance:0, readEntries:0, readMin:0 };
+    ks.forEach(k => { const r = tdx.stats.daily[k]; if(!r) return;
+      s.xp += r.xp || 0; s.readEntries += r.readEntries || 0; s.readMin += r.readMin || 0;
+      Object.keys(ACT).forEach(a => { s.acts += actCount(r, a); });
+      s.lessons += r.lessons || 0; s.assignments += r.assignments || 0; s.attendance += r.attendance || 0;
+      s.totalT += widgetSecs(r); s.docT += (r.timeBy || {})[DOC_KEY] || 0; });
+    return s; };
   const fmtDay = k => new Date(k + 'T12:00').toLocaleDateString(state.lang || 'en', { month:'short', day:'numeric' });
   const wLabel = id => { const w = WIDGETS.find(x => x.id === id); return w ? widgetLabel(w.labelKey) : id; };
   const bars = rows => { const mx = Math.max(1, ...rows.map(r => r.v)); return rows.map((r, n) => `<div class="sx-bar" style="--n:${n}"><span title="${xEsc(r.l)}">${xEsc(r.l)}</span><div><i style="width:${Math.round(r.v / mx * 100)}%"></i></div><b>${xEsc(r.t)}</b></div>`).join('') || `<p class="small-hint">${t('stats_none')}</p>`; };
@@ -3369,20 +3447,6 @@ function renderStats(body){
     const end = +m[1], dec = (m[1].split('.')[1] || '').length, t0 = performance.now() + delay, dur = 750; cancelAnimationFrame(el._raf);
     const step = now => { const k = Math.max(0, Math.min(1, (now - t0) / dur)), e = 1 - Math.pow(1 - k, 3); el.textContent = (end * e).toFixed(dec) + m[2]; if(k < 1) el._raf = requestAnimationFrame(step); else el.textContent = raw; };
     el.textContent = '0' + m[2]; el._raf = requestAnimationFrame(step);
-  }
-  function badgeGallery(){                                                  // the Badges card: next up, filters, then every badge by group
-    const B = bdState(), C = badgeCtx(), n = BADGES.filter(x => B.earned[x.id]).length, pct = Math.round(n / BADGES.length * 100);
-    const prog = x => Math.min(1, x.val(C) / x.n), nf = v => Math.round(v).toLocaleString();
-    const next = BADGES.filter(x => !B.earned[x.id]).sort((a, c) => prog(c) - prog(a)).slice(0, 3);
-    let k = 0;
-    const tile = x => { const on = !!B.earned[x.id], e = B.earned[x.id], i = k++;
-      return `<div class="bd t${x.tier}${on ? ' on' : ''}" data-on="${on ? 1 : 0}" style="--n:${i}" title="${xEsc(bdDesc(x))}">${medalHtml(x, on)}<b>${xEsc(bdName(x))}</b><small>${xEsc(bdDesc(x))}</small>${on
-        ? `<em>${e.old ? t('bd_old') : t('bd_earned', { date:fmtDay(xDayKey(e.t)) })}</em>`
-        : `<div class="bd-bar"><i style="width:${Math.round(prog(x) * 100)}%"></i></div><em>${nf(Math.min(x.val(C), x.n))} / ${nf(x.n)}${bdUnit(x)}</em>`}</div>`; };
-    return `<div class="bd-sum"><div>${t('bd_of', { n:`<b>${n}</b>`, total:BADGES.length })}</div><div class="sx-xpbar bd-xpbar"><i style="width:${pct}%"></i></div>
-      <div class="sx-range sx-range-sm" role="group" aria-label="${t('bd_h')}">${[['all', 'bd_f_all'], ['on', 'bd_f_on'], ['off', 'bd_f_off']].map(([f, key]) => chip('bf', f, t(key), badgeFilter === f)).join('')}</div></div>
-      ${next.length ? `<p class="bd-next-h">${t('bd_next')}</p><div class="bd-next">${next.map(x => `<div class="bd-nx t${x.tier}">${medalHtml(x, false)}<div><b>${xEsc(bdName(x))}</b><small>${xEsc(bdDesc(x))}</small><div class="bd-bar"><i style="width:${Math.round(prog(x) * 100)}%"></i></div><em>${nf(Math.min(x.val(C), x.n))} / ${nf(x.n)}${bdUnit(x)}</em></div></div>`).join('')}</div>` : `<p class="small-hint">${t('bd_all_done')}</p>`}
-      <div class="bgal" data-f="${badgeFilter}">${BADGE_GROUPS.map(g => `<h5>${t('bdg_' + g)}</h5><div class="bd-grid">${BADGES.filter(x => x.group === g).map(tile).join('')}</div>`).join('')}</div>`;
   }
 
   function draw(){
@@ -3399,7 +3463,7 @@ function renderStats(body){
     });
     const totalT = Object.entries(timeBy).filter(([k]) => k !== DOC_KEY).reduce((a, [, c]) => a + c, 0), docT = timeBy[DOC_KEY] || 0;
     const topW = Object.entries(timeBy).filter(([k]) => k !== DOC_KEY).sort((a, c) => c[1] - a[1])[0];
-    const todayRec = days[xDayKey(Date.now())] || {}, badgesN = Object.keys(bdState().earned).length;
+    const todayRec = days[xDayKey(Date.now())] || {};
 
     /* ---- top: level, streak, range, export ---- */
     body.querySelector('#sx-top').innerHTML = `<div class="sx-hero">
@@ -3410,9 +3474,12 @@ function renderStats(body){
         <button type="button" class="sx-chip" data-export>${t('stats_export')}</button></div></div>`;
 
     /* ---- tiles ---- */
-    const tiles = [['stats_xp_earned', T.xp], ['stats_tile_acts', T.acts], ['stats_active', fmtDur(totalT)], ['stats_doc_time', fmtDur(docT)], ['stats_tile_days', activeDays],
-      ['stats_lessons', A.lesson || 0], ['stats_assignments', A.assignment || 0], ['stats_attendance', A.attendance || 0], ['stats_reading', `${T.readEntries} · ${T.readMin} min`],
-      ['stats_tile_top', topW ? wLabel(topW[0]) : '—'], ['stats_tile_best', best && best.v ? `${fmtDay(best.k)} · ${best.v} XP` : '—'], ['stats_tile_badges', `${badgesN} / ${BADGES.length}`]];
+    const daysSt = range === 'week' ? stoplight('days', activeDays) : null;         // day-count thresholds assume a 7-day week
+    const prevKeys = prevDayKeys(), P = prevKeys ? sumBasic(prevKeys) : null;        // null on "all time" — no equal-length period before it
+    const trendSt = (cur, prevVal) => P ? stoplight('trend', stPct(cur, prevVal)) : null;
+    const tiles = [['stats_xp_earned', T.xp, trendSt(T.xp, P && P.xp)], ['stats_tile_acts', T.acts, trendSt(T.acts, P && P.acts)], ['stats_active', fmtDur(totalT), trendSt(totalT, P && P.totalT)], ['stats_doc_time', fmtDur(docT), trendSt(docT, P && P.docT)], ['stats_tile_days', activeDays, daysSt],
+      ['stats_lessons', A.lesson || 0, trendSt(A.lesson || 0, P && P.lessons)], ['stats_assignments', A.assignment || 0, trendSt(A.assignment || 0, P && P.assignments)], ['stats_attendance', A.attendance || 0, trendSt(A.attendance || 0, P && P.attendance)], ['stats_reading', `${T.readEntries} · ${T.readMin} min`, trendSt(T.readMin, P && P.readMin)],
+      ['stats_tile_top', topW ? wLabel(topW[0]) : '—'], ['stats_tile_best', best && best.v ? `${fmtDay(best.k)} · ${best.v} XP` : '—']];
 
     /* ---- trend (14 days) ---- */
     const N = 14, trend = Array.from({ length:N }, (_, i) => { const k = xDayKey(Date.now() - (N - 1 - i) * 864e5), r = days[k] || {};
@@ -3451,7 +3518,6 @@ function renderStats(body){
       <div class="sx-cols sx-cols-lg">${trend.map((d, n) => `<div class="sx-col" style="--n:${n}" data-v="${d.v} ${unitOf}" title="${d.k}: ${d.v} ${unitOf}"><em>${d.v || ''}</em><i style="height:${Math.round(d.v / mxT * 100)}%"></i><span>${new Date(d.k + 'T12:00').toLocaleDateString(state.lang || 'en', { weekday:'narrow' })}<small>${+d.k.slice(8)}</small></span></div>`).join('')}</div>`);
     const heatCard = card(t('stats_h_heat'), `<div class="sx-heat" role="img" aria-label="${t('stats_h_heat')}">${cells.map((c, n) => `<i class="sx-hm${c.future ? ' x' : ' l' + (c.v ? Math.max(1, Math.ceil(c.v / mxH * 4)) : 0)}" style="--n:${n};--d:${((n * 37) % 23) / 10}s" title="${c.k}: ${c.a} · ${c.xp} XP"></i>`).join('')}</div>
       <div class="sx-legend">${t('stats_less')} <i class="sx-hm l0"></i><i class="sx-hm l1"></i><i class="sx-hm l2"></i><i class="sx-hm l3"></i><i class="sx-hm l4"></i> ${t('stats_more')}</div>`);
-    const badgeCard = card(`🏅 ${t('bd_h')}`, `<div id="sx-badges">${badgeGallery()}</div>`, 'wide');
     const actsCard = card(`${t('stats_h_acts')} <span class="small-hint">${t('stats_acts_hint')}</span>`, `<div class="sx-cats">${cats}</div>`, 'wide');
     const xpCard = card(t('stats_h_xpby'), bars(xpRows));
     const timeCard = card(`${t('stats_h_time')} <span class="small-hint">${t('stats_while_active')}</span>`, bars(timeRows));
@@ -3461,8 +3527,8 @@ function renderStats(body){
       ${feedHtml || `<p class="small-hint">${t('stats_empty_feed')}</p>`}
       ${all.length > shown.length ? `<button type="button" class="sx-chip sx-more" data-more>${t('stats_more_btn', { n:all.length - shown.length })}</button>` : ''}`, 'wide');
 
-    body.querySelector('#sx-main').innerHTML = `<div class="sx-tiles">${tiles.map(([key, v], n) => `<div class="sx-tile" style="--n:${n}"><b>${xEsc(v)}</b><span>${t(key)}</span></div>`).join('')}</div>
-      <div class="sx-grid">${trendCard}${heatCard}${badgeCard}${actsCard}${xpCard}${timeCard}${rulesCard}${docsCard}${feedCard}</div>`;
+    body.querySelector('#sx-main').innerHTML = `${stoplightLegendHtml()}<div class="sx-tiles">${tiles.map(([key, v, st], n) => `<div class="sx-tile" style="--n:${n}"${st ? ` data-st="${st}"` : ''}><b>${xEsc(v)}</b><span>${t(key)}</span></div>`).join('')}</div>
+      <div class="sx-grid">${trendCard}${heatCard}${actsCard}${xpCard}${timeCard}${rulesCard}${docsCard}${feedCard}</div>`;
     body.scrollTop = keepScroll;
 
     const main = body.querySelector('#sx-main'), top = body.querySelector('#sx-top');
@@ -3480,12 +3546,11 @@ function renderStats(body){
     if(fxCols){ setTimeout(() => main.classList.remove('fx-cols'), 1500); fxCols = false; }
   }
   body.addEventListener('click', e => {
-    const c = e.target.closest('[data-r],[data-m],[data-fc],[data-more],[data-export],[data-bf]'); if(!c) return;
+    const c = e.target.closest('[data-r],[data-m],[data-fc],[data-more],[data-export]'); if(!c) return;
     if('export' in c.dataset){ exportStatsCsv(); return; }
     if('r' in c.dataset){ range = c.dataset.r; feedMax = 40; fx = true; }
     else if('m' in c.dataset){ metric = c.dataset.m; fxCols = true; }
     else if('fc' in c.dataset){ feedCat = c.dataset.fc; feedMax = 40; }
-    else if('bf' in c.dataset) badgeFilter = c.dataset.bf;
     else if('more' in c.dataset) feedMax += 60;
     draw();
   });
@@ -3498,6 +3563,41 @@ function renderStats(body){
   body.addEventListener('mouseleave', () => { if(dirty){ dirty = false; draw(); } });
   statsRedraw = live; draw(); const iv = setInterval(live, 10000);
   return ()=>{ clearInterval(iv); if(statsRedraw === live) statsRedraw = null; };
+}
+
+/* ---------------- Badge Display Case (v0.22.1) ----------------
+   The teacher's own badges — split out of My Stats & XP into its own widget so Stats stays about activity, not a trophy
+   wall. Same hero-spot + shelf chrome as the Badges tab's per-student case (Rewards & Points) and ParentDeck's Badge
+   Display Case — reuses the existing .bc-hero/.bc-cabinet/.bc-shelf CSS, just with the teacher's own BADGES/bdState(). */
+function renderBadgeCase(body){
+  let badgeFilter = 'all', fx = true;
+  const chip = (attr, val, label, on) => `<button type="button" class="sx-chip${on ? ' on' : ''}" data-${attr}="${val}">${label}</button>`;
+  const fmtDay = k => new Date(k + 'T12:00').toLocaleDateString(state.lang || 'en', { month:'short', day:'numeric' });
+  const nf = v => Math.round(v).toLocaleString();
+  function draw(){
+    const B = bdState(), C = badgeCtx(), earned = BADGES.filter(x => B.earned[x.id]), n = earned.length, pct = Math.round(n / BADGES.length * 100);
+    const prog = x => Math.min(1, x.val(C) / x.n);
+    // normalize into the shape bcTileHtml/bcNextUpHtml/bcHeroHtml expect — see their comment, above medalHtml
+    const norm = x => { const on = !!B.earned[x.id], e = B.earned[x.id];
+      return { ...x, name:bdName(x), desc:bdDesc(x), on, progress:prog(x),
+        countLine:`${nf(Math.min(x.val(C), x.n))} / ${nf(x.n)}${bdUnit(x)}`,
+        earnedLine: on ? (e.old ? t('bd_old') : t('bd_earned', { date:fmtDay(xDayKey(e.t)) })) : null }; };
+    const next = BADGES.filter(x => !B.earned[x.id]).sort((a, c) => prog(c) - prog(a)).slice(0, 3).map(norm);
+    const spot = earned.slice().sort((a, c) => (B.earned[c.id].t || 0) - (B.earned[a.id].t || 0))[0];
+    let k = 0;
+    const keep = body.scrollTop;
+    const shelves = BADGE_GROUPS.map(g => [t('bdg_' + g), BADGES.filter(x => x.group === g).map(x => bcTileHtml(norm(x), k++)).join('')]);
+    body.innerHTML = bcHeroHtml(spot && norm(spot), t('bd_of', { n:`<b>${n}</b>`, total:BADGES.length }), spot ? `<div class="xpbar wide"><i style="width:${pct}%"></i></div>` : '', t('rp_badges_none_yet'))
+      + `<div class="sx-range sx-range-sm" role="group" aria-label="${t('bd_h')}">${[['all', 'bd_f_all'], ['on', 'bd_f_on'], ['off', 'bd_f_off']].map(([f, key]) => chip('bf', f, t(key), badgeFilter === f)).join('')}</div>
+      ${next.length ? `<p class="bd-next-h">${t('bd_next')}</p><div class="bd-next">${next.map(bcNextUpHtml).join('')}</div>` : `<p class="small-hint">${t('bd_all_done')}</p>`}
+      ` + bcCabinetHtml(shelves, badgeFilter);
+    body.classList.toggle('fx-in', fx);
+    if(fx){ setTimeout(() => body.classList.remove('fx-in'), 2400); fx = false; }
+    body.scrollTop = keep;
+  }
+  body.addEventListener('click', e => { const f = e.target.closest('[data-bf]'); if(f){ badgeFilter = f.dataset.bf; draw(); } });
+  badgeCaseRedraw = draw; draw();
+  return () => { if(badgeCaseRedraw === draw) badgeCaseRedraw = null; };
 }
 
 /* ---------------- Document stage ----------------
@@ -4192,7 +4292,7 @@ window.addEventListener('storage', e=>{
 });
 
 function renderScoreboard(body, ctx){
-  if(ctx && ctx.preset){ const pre = ctx.preset; state.scoreboard = pre.teams.map((name, i) => ({ name, score: (pre.keep && state.scoreboard[i]) ? state.scoreboard[i].score : 0 })); saveState(); }   // ClassIn port: ?teams=
+  if(ctx && ctx.preset){ const pre = ctx.preset; state.scoreboard = pre.teams.map((name, i) => ({ name, score: (pre.keep && state.scoreboard[i]) ? state.scoreboard[i].score : 0 })); saveState(); }   // platform (ClassIn): ?teams=
   body.innerHTML = `
     <div class="sb">
       <p class="sb-sub" data-i18n="sb_sub">${t('sb_sub')}</p>
@@ -4660,7 +4760,7 @@ function renderCalendar(body){
     body.querySelector('#cf-ics').addEventListener('change', async e=>{
       const file = e.target.files[0];
       if(!file) return;
-      const text = await file.text();
+      const text = window.Watermark ? Watermark.strip(await file.text()) : await file.text();   // a watermarked export re-imports cleanly
       const imported = parseICS(text);
       imported.forEach(ev=>{
         state.calendarEvents.push({ id:cid(), title:ev.title||'', date:ev.date, time:ev.time||'', reminder:'none', notes:ev.notes||'', fired:false });
@@ -5376,8 +5476,8 @@ async function lpCopyPlan(lp){
   try{
     if(navigator.clipboard && window.ClipboardItem){
       await navigator.clipboard.write([ new ClipboardItem({
-        'text/html':  new Blob([html], { type:'text/html' }),
-        'text/plain': new Blob([text], { type:'text/plain' })
+        'text/html':  new Blob([(window.Watermark ? Watermark.stamp(html) : html)], { type:'text/html' }),
+        'text/plain': new Blob([(window.Watermark ? Watermark.stamp(text) : text)], { type:'text/plain' })
       }) ]);
       return true;
     }
@@ -5736,7 +5836,7 @@ function renderNoise(body, ctx){
   let held = 0, holdUntil = 0, lastFrame = 0, lastSample = 0, bucketMax = 0;
   let ro = null;
   const hist = noiseHistory;
-  if(ctx && ctx.preset && ctx.preset.go) setTimeout(()=>{ const b = body.querySelector('#noise-toggle'); if(b && !running) b.click(); }, 300);   // ClassIn port: ?go=1
+  if(ctx && ctx.preset && ctx.preset.go) setTimeout(()=>{ const b = body.querySelector('#noise-toggle'); if(b && !running) b.click(); }, 300);   // platform (ClassIn): ?go=1
 
   function styleKey(){
     const s = state.noiseMeter && state.noiseMeter.style;
@@ -5883,7 +5983,7 @@ function renderNoise(body, ctx){
       // Extension page + not explicitly blocked in Chrome settings = the prompt
       // was dismissed/suppressed, not refused: offer the setup page.
       if(inExtension && !blocked) showGrantHelp(msgEl);
-      else if(window.TD_BOARD && TD_BOARD.micHelp(msgEl, start)) { /* ClassIn port: ClassIn may be using the mic */ }
+      else if(window.TD_BOARD && TD_BOARD.micHelp(msgEl, start)) { /* platform (ClassIn): ClassIn may be using the mic */ }
       else msgEl.textContent = t('noise_denied');
       return;
     }
@@ -6427,6 +6527,54 @@ function renderSoundboard(body){
 function renderAttendance(body){
   function todayKey(d){ d = d||new Date(); return d.toISOString().slice(0,10); }
   let curDate = todayKey();
+  /* v0.21.2: "Share with families" — when this class is linked to a cloud class and the teacher turns it on, each day's
+     present / late / absent is copied to students/{id}/attendance/{date} for ParentDeck's Attendance widget (status only,
+     never notes). Off by default: sharing attendance is the teacher's decision. Local names are matched to the cloud
+     roster the same way Class Builder does (cbMatch); a name with no cloud student is simply not shared. */
+  let cloudRoster = [], unsubRoster = null;
+  const cloudOn = () => !!(state.cloudClassId && typeof TDCloud !== 'undefined' && TDCloud.isConfigured() && TDCloud.getSession());
+  if(cloudOn()) unsubRoster = TDCloud.subscribeRoster(state.cloudClassId, list=>{ cloudRoster = list || []; drawShare(); });
+  function cloudIdsByName(){
+    const { map } = cbMatch(state.students || [], cloudRoster), out = {};
+    (state.students || []).forEach(s=>{ const hit = map.get(s.id); if(hit) out[studentDisplay(s)] = hit.id; });
+    return out;
+  }
+  async function share(entries){
+    if(!entries.length) return;
+    try{ await TDCloud.syncAttendance(state.cloudClassId, entries); }
+    catch(e){ toast(t('att_share_failed')); }
+  }
+  function shareDay(day, names){
+    if(!state.attendanceShared || !cloudOn()) return;
+    const ids = cloudIdsByName(), rec = state.attendance[day] || {};
+    share(names.filter(n=> ids[n]).map(n=> ({ studentId: ids[n], day, status: rec[n] || null })));
+  }
+  function allEntries(clear){
+    const ids = cloudIdsByName(), out = [], from = todayKey(new Date(Date.now() - 365 * 86400000));
+    Object.keys(state.attendance || {}).filter(d=> d >= from).forEach(day=>{
+      Object.entries(state.attendance[day] || {}).forEach(([n, s])=>{ if(ids[n]) out.push({ studentId: ids[n], day, status: clear ? null : s }); });
+    });
+    return out;
+  }
+  function drawShare(){
+    const el = body.querySelector('#att-share');
+    if(!el) return;
+    if(!cloudOn()){ el.hidden = true; return; }
+    el.hidden = false;
+    const ids = cloudIdsByName(), matched = state.roster.filter(n=> ids[n]).length;
+    el.innerHTML = `<label class="switch-row"><span>${t('att_share_label')}</span><input type="checkbox" id="att-share-on" ${state.attendanceShared ? 'checked' : ''}></label>
+      <p class="small-hint">${state.attendanceShared ? t('att_share_on', { n: matched, total: state.roster.length }) : t('att_share_off')}</p>`;
+    el.querySelector('#att-share-on').addEventListener('change', e=>{
+      if(e.target.checked){
+        if(!confirm(t('att_share_confirm'))){ e.target.checked = false; return; }
+        state.attendanceShared = true; saveState(); share(allEntries(false));
+      } else {
+        const clear = confirm(t('att_unshare_confirm'));
+        state.attendanceShared = false; saveState(); if(clear) share(allEntries(true));
+      }
+      drawShare();
+    });
+  }
   function dayRecord(){
     if(!state.attendance[curDate]) state.attendance[curDate] = {};
     return state.attendance[curDate];
@@ -6444,8 +6592,10 @@ function renderAttendance(body){
       </div>
       <div class="scroll-list" id="att-list"></div>
       <p class="att-summary" id="att-summary"></p>
+      <div class="att-share" id="att-share" hidden></div>
       <div class="btn-row"><button class="wbtn" id="att-export" data-i18n="att_export">${t('att_export')}</button></div>
     `;
+    drawShare();
     const list = body.querySelector('#att-list');
     state.roster.forEach(name=>{
       const status = rec[name] || '';
@@ -6466,6 +6616,7 @@ function renderAttendance(body){
           rec[name] = rec[name] === s ? undefined : s;
           if(rec[name] === undefined) delete rec[name];
           else if(curDate === todayKey()){ const dr = dayRec(); if(!dr.attDone){ dr.attDone = true; stat('attendance'); logAct('attendance', '', 1, awardXP('attendance', 5)); } }
+          shareDay(curDate, [name]);
           saveState();
           draw();
         });
@@ -6482,7 +6633,7 @@ function renderAttendance(body){
     body.querySelector('#att-export').addEventListener('click', ()=>{
       const rows = [['Student','Status'], ...state.roster.map(n=>[n, rec[n]||''])];
       const csv = rows.map(r=> r.map(c=> `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-      const blob = new Blob([csv], { type:'text/csv' });
+      const blob = new Blob([(window.Watermark ? Watermark.stamp(csv) : csv)], { type:'text/csv' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = `attendance-${curDate}.csv`;
@@ -6491,7 +6642,153 @@ function renderAttendance(body){
     });
   }
   draw();
-  return null;
+  return ()=>{ if(unsubRoster) unsubRoster(); };
+}
+
+/* v0.27.0 (backend v2.8.0): Scrapbook Review — approve or hide pages students shared from StudentDeck's
+   Scrapdeck ("Scrapdeck sharing", M3). Free widget (never gate the loop): listScrapPages/reviewScrapPage
+   are Cloud Functions, not a live subscription, so this refetches after the teacher's own actions rather
+   than updating in real time — acceptable for a one-teacher review queue. */
+function renderScrapReview(body){
+  const cloudOn = () => !!(state.cloudClassId && typeof TDCloud !== 'undefined' && TDCloud.isConfigured() && TDCloud.getSession());
+  let rows = [], filter = 'pending', loading = false, galleryOn = false, galleryBusy = false, galleryKnown = false;
+  async function load(){
+    if(!cloudOn()){ draw(); return; }
+    loading = true; draw();
+    try{ rows = await TDCloud.listScrapPages(state.cloudClassId); }
+    catch(e){ toast(t('srv_load_fail')); rows = []; }
+    loading = false; draw();
+  }
+  async function act(studentId, pageId, action){
+    try{ await TDCloud.reviewScrapPage(studentId, pageId, action); toast(t(action === 'approve' ? 'srv_toast_approved' : 'srv_toast_hidden')); await load(); }
+    catch(e){ toast(t('srv_action_fail')); }
+  }
+  function rowHtml(r){
+    const aud = (r.audiences || []).map(a => a === 'family' ? t('srv_aud_family') : t('srv_aud_class')).join(' + ');
+    return `<div class="srv-row">
+      <img class="srv-thumb" src="${xEsc(r.thumbDataUrl || '')}" alt="">
+      <div class="srv-meta">
+        <b>${xEsc(r.title || '')}</b>
+        <span class="small-hint">${xEsc(r.studentName || '')} · ${xEsc(aud)} · ${t('srv_status_' + r.status)}</span>
+        ${r.caption ? `<p class="small-hint">${xEsc(r.caption)}</p>` : ''}
+      </div>
+      <div class="srv-actions">
+        ${r.status !== 'approved' ? `<button class="wbtn" data-approve="${xEsc(r.pageId)}" data-student="${xEsc(r.studentId)}">${t('srv_approve')}</button>` : ''}
+        ${r.status !== 'hidden' ? `<button class="wbtn" data-hide="${xEsc(r.pageId)}" data-student="${xEsc(r.studentId)}">${t('srv_hide')}</button>` : ''}
+      </div>
+    </div>`;
+  }
+  function draw(){
+    if(!cloudOn()){ body.innerHTML = `<p class="small-hint">${t('srv_need_class')}</p>`; return; }
+    const shown = filter === 'all' ? rows : rows.filter(r => r.status === filter);
+    const counts = { pending:0, approved:0, hidden:0 }; rows.forEach(r => { if(counts[r.status] != null) counts[r.status]++; });
+    body.innerHTML = `
+      <label class="switch-row"><span>${t('srv_gallery_label')}</span><input type="checkbox" id="srv-gallery" ${galleryOn ? 'checked' : ''} ${galleryBusy || !galleryKnown ? 'disabled' : ''}></label>
+      <p class="small-hint">${t('srv_gallery_hint')}</p>
+      <div class="btn-row srv-filter">
+        <button class="chip ${filter === 'pending' ? 'on' : ''}" data-f="pending">${t('srv_f_pending')} (${counts.pending})</button>
+        <button class="chip ${filter === 'approved' ? 'on' : ''}" data-f="approved">${t('srv_f_approved')} (${counts.approved})</button>
+        <button class="chip ${filter === 'hidden' ? 'on' : ''}" data-f="hidden">${t('srv_f_hidden')} (${counts.hidden})</button>
+        <button class="chip ${filter === 'all' ? 'on' : ''}" data-f="all">${t('srv_f_all')} (${rows.length})</button>
+      </div>
+      <div class="scroll-list srv-list">${loading ? `<p class="small-hint">${t('srv_loading')}</p>` : (shown.length ? shown.map(rowHtml).join('') : `<p class="small-hint">${t('srv_empty')}</p>`)}</div>
+    `;
+    const g = body.querySelector('#srv-gallery');
+    if(g) g.addEventListener('change', async e => {
+      const want = e.target.checked; galleryBusy = true; draw();
+      try{ await TDCloud.setScrapGalleryOn(state.cloudClassId, want); galleryOn = want; }
+      catch(err){ toast(t('srv_action_fail')); }
+      galleryBusy = false; draw();
+    });
+    body.querySelectorAll('[data-f]').forEach(b => b.addEventListener('click', () => { filter = b.dataset.f; draw(); }));
+    body.querySelectorAll('[data-approve]').forEach(b => b.addEventListener('click', () => act(b.dataset.student, b.dataset.approve, 'approve')));
+    body.querySelectorAll('[data-hide]').forEach(b => b.addEventListener('click', () => act(b.dataset.student, b.dataset.hide, 'hide')));
+  }
+  let unsubClass = null;
+  if(cloudOn()){
+    unsubClass = TDCloud.subscribeClass(state.cloudClassId, c => { galleryOn = !!(c && c.scrapGalleryOn); galleryKnown = true; draw(); if(unsubClass){ unsubClass(); unsubClass = null; } });
+  }
+  load();
+  return ()=>{ if(unsubClass) unsubClass(); };
+}
+
+/* v0.29.0 (backend v2.9.0): Board Assignments — review students' answers to a DrawDeck page assigned
+   to the class and award XP (DrawDeck scope step D, "student boards"). New assignments are created from
+   DrawDeck's More menu ("Assign this page to students"), not here; this widget is purely review/grading.
+   Free widget (never gate the loop): grading what a student already submitted is part of the loop. */
+function renderBoardReview(body){
+  const cloudOn = () => !!(state.cloudClassId && typeof TDCloud !== 'undefined' && TDCloud.isConfigured() && TDCloud.getSession());
+  let assignments = [], unsubA = null, openId = null, rows = [], loadingRows = false;
+  function load(){
+    if(!cloudOn()){ draw(); return; }
+    unsubA = TDCloud.subscribeBoardAssignments(state.cloudClassId, list => { assignments = list; draw(); });
+  }
+  async function loadRows(id){
+    loadingRows = true; draw();
+    try{ rows = await TDCloud.listBoardAnswers(state.cloudClassId, id); }
+    catch(e){ toast(t('brv_load_fail')); rows = []; }
+    loadingRows = false; draw();
+  }
+  async function toggleOpen(a){
+    try{ await TDCloud.closeAssignment(state.cloudClassId, a.id, a.open === false); }
+    catch(e){ toast(t('brv_action_fail')); }
+  }
+  async function award(row, input){
+    const amount = Math.max(0, Math.min(10000, Math.round(+input.value || 0)));
+    if(!amount){ toast(t('brv_amount_zero')); return; }
+    try{ await TDCloud.awardBoardAnswer(state.cloudClassId, row.studentId, row.assignmentId, amount, t('brv_award_reason', { title: assignments.find(a=>a.id===openId)?.title || '' })); toast(t('brv_awarded', { n:amount })); loadRows(openId); }
+    catch(e){ toast(t('brv_action_fail')); }
+  }
+  function rowHtml(r){
+    return `<div class="srv-row">
+      <img class="srv-thumb" src="${xEsc(r.thumbDataUrl || '')}" alt="">
+      <div class="srv-meta">
+        <b>${xEsc(r.studentName || '')}</b>
+        <span class="small-hint">${r.awarded ? t('brv_graded', { n:r.awardedAmount||0 }) : t('brv_submitted')}</span>
+      </div>
+      <div class="srv-actions">
+        ${r.awarded ? '' : `<input type="number" class="brv-xp" min="0" max="10000" placeholder="${xEsc(t('brv_xp_ph'))}" style="width:70px">
+        <button class="wbtn" data-award="${xEsc(r.studentId)}">${t('brv_award')}</button>`}
+      </div>
+    </div>`;
+  }
+  function draw(){
+    if(!cloudOn()){ body.innerHTML = `<p class="small-hint">${t('brv_need_class')}</p>`; return; }
+    if(openId){
+      const a = assignments.find(x => x.id === openId);
+      body.innerHTML = `
+        <button class="wbtn" id="brv-back">${t('brv_back')}</button>
+        <h3 style="margin:8px 0 2px">${xEsc(a ? a.title : '')}</h3>
+        <div class="scroll-list srv-list">${loadingRows ? `<p class="small-hint">${t('srv_loading')}</p>` : (rows.length ? rows.map(rowHtml).join('') : `<p class="small-hint">${t('brv_empty')}</p>`)}</div>
+      `;
+      body.querySelector('#brv-back').addEventListener('click', () => { openId = null; draw(); });
+      body.querySelectorAll('[data-award]').forEach(b => b.addEventListener('click', () => {
+        const row = rows.find(r => r.studentId === b.dataset.award);
+        const input = b.parentElement.querySelector('.brv-xp');
+        if(row && input) award(row, input);
+      }));
+      return;
+    }
+    body.innerHTML = `
+      <div class="scroll-list srv-list">${assignments.length ? assignments.map(a => `
+        <div class="srv-row">
+          <img class="srv-thumb" src="${xEsc(a.thumbDataUrl || '')}" alt="">
+          <div class="srv-meta">
+            <b>${xEsc(a.title || '')}</b>
+            <span class="small-hint">${a.open === false ? t('brv_closed') : t('brv_open')}</span>
+          </div>
+          <div class="srv-actions">
+            <button class="wbtn" data-review="${xEsc(a.id)}">${t('brv_review')}</button>
+            <button class="wbtn" data-toggle="${xEsc(a.id)}">${a.open === false ? t('brv_reopen') : t('brv_close')}</button>
+          </div>
+        </div>
+      `).join('') : `<p class="small-hint">${t('brv_none')}</p>`}</div>
+    `;
+    body.querySelectorAll('[data-review]').forEach(b => b.addEventListener('click', () => { openId = b.dataset.review; rows = []; loadRows(openId); }));
+    body.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => { const a = assignments.find(x=>x.id===b.dataset.toggle); if(a) toggleOpen(a); }));
+  }
+  load();
+  return ()=>{ if(unsubA) unsubA(); };
 }
 
 function renderGroupMaker(body){
@@ -6598,7 +6895,7 @@ function renderExitTicket(body){
 }
 
 function renderAgenda(body, ctx){
-  if(ctx && ctx.preset){ Object.assign(state.agenda, ctx.preset); saveState(); }   // ClassIn port: ?schedule=&objective=&donow=
+  if(ctx && ctx.preset){ Object.assign(state.agenda, ctx.preset); saveState(); }   // platform (ClassIn): ?schedule=&objective=&donow=
   function draw(){
     const ag = state.agenda;
     body.innerHTML = `
@@ -7221,7 +7518,7 @@ function stripLeadNum(s){ return String(s == null ? '' : s).replace(/^\s*\d{1,2}
 
 function renderInstructions(body, ctx){
   const ib = state.instructionsBoard;
-  if(ctx && ctx.preset){ const p = ctx.preset; ib.title = p.title; ib.titleVi = p.titleVi; ib.steps = p.steps.map(s => ({ id:cid(), text:s.text, vi:s.vi })); ib.current = 0; saveState(); }   // ClassIn port: ?title=&steps=
+  if(ctx && ctx.preset){ const p = ctx.preset; ib.title = p.title; ib.titleVi = p.titleVi; ib.steps = p.steps.map(s => ({ id:cid(), text:s.text, vi:s.vi })); ib.current = 0; saveState(); }   // platform (ClassIn): ?title=&steps=
   if(ib.showVi === undefined) ib.showVi = true;
   if(ib.autoVi === undefined) ib.autoVi = true;
   if(ib.viewAll === undefined) ib.viewAll = false;
@@ -7831,6 +8128,18 @@ function watchAdminTheme(){
   if(want) adminThemeUnsub = TDCloud.subscribeAdminTheme(want, th=>{ if(th) applyAdminTheme(want, th); });
 }
 TDCloud.onAuthChanged(watchAdminTheme);
+
+/* platform (Canvas): keep state.school, and so isPro(), in step with the signed-in teacher's school — joined with a code
+   or assigned by a Canvas launch. schools/* has no client rule, so the pro flag comes from the getMySchoolPro callable
+   (js/cloud.js), not a direct read. Off unless the platform asks for school-level Pro. */
+let schoolUnsub = null;
+function watchMySchool(){
+  if(!(PF && PF.schoolPro)) return;
+  if(schoolUnsub){ schoolUnsub(); schoolUnsub = null; }
+  if(!(TDCloud.isConfigured() && TDCloud.getSession() && TDCloud.subscribeMySchool)){ state.school = null; return; }
+  schoolUnsub = TDCloud.subscribeMySchool(s=>{ state.school = (s && s.schoolId) ? s : null; buildProStatus(); });
+}
+TDCloud.onAuthChanged(watchMySchool);
 setInterval(watchAdminTheme, 4000);                      // picks up a class switch / Cloud Class link without touching those code paths
 {
   const acc = document.getElementById('accept-admin-theme');
@@ -7990,7 +8299,8 @@ wireDrawer('btn-settings','settings-drawer','settings-close');
 
 /* ---------------- TeachersDeck Pro ---------------- */
 function fmtPrice(){
-  return `$${PRO_PRICE_USD} / ${PRO_PRICE_VND.toLocaleString('vi-VN')}₫`;
+  const m = PRO_PRICING_VND.monthly.toLocaleString('vi-VN'), y = PRO_PRICING_VND.annual.toLocaleString('vi-VN');
+  return state.lang === 'vi' ? `${m}₫/tháng hoặc ${y}₫/năm` : `${m}₫/month or ${y}₫/year`;
 }
 function buildProStatus(){
   const badge = document.getElementById('pro-badge');
@@ -8021,7 +8331,7 @@ function buildVietQRPanel(){
   }
   const addInfo = encodeURIComponent('TeachersDeck Pro');
   const acctName = encodeURIComponent(HSBC_ACCOUNT_NAME || '');
-  const url = `https://img.vietqr.io/image/${HSBC_VIETQR_BIN}-${HSBC_ACCOUNT_NUMBER}-compact2.png?amount=${PRO_PRICE_VND}&addInfo=${addInfo}&accountName=${acctName}`;
+  const url = `https://img.vietqr.io/image/${HSBC_VIETQR_BIN}-${HSBC_ACCOUNT_NUMBER}-compact2.png?amount=${PRO_PRICING_VND.annual}&addInfo=${addInfo}&accountName=${acctName}`;
   box.innerHTML = `<img src="${url}" alt="VietQR payment code">`;
   if(details){
     details.innerHTML = `
@@ -8104,6 +8414,7 @@ document.getElementById('pro-license-activate').addEventListener('click', async 
     'not-found': 'pro_license_invalid',
     'device-mismatch': 'pro_license_device_mismatch',
     'revoked': 'pro_license_revoked',
+    'expired': 'pro_license_expired',
     'not-configured': 'pro_license_network_error',
     'network': 'pro_license_network_error',
   }[result.reason] || 'pro_license_invalid';
@@ -8127,6 +8438,7 @@ document.getElementById('reset-all').addEventListener('click', ()=>{
   try{ localStorage.removeItem(CLASSES_KEY); }catch(e){}
   localStorage.removeItem(LS_KEY);
   try{ localStorage.removeItem(XKEY); }catch(e){}
+  try{ localStorage.removeItem('td_drawdeck_v1'); }catch(e){}   // DrawDeck prefs (its boards live in the IndexedDB deleted below)
   indexedDB.deleteDatabase('TeachersDeck');
   location.reload();
 });
@@ -8267,6 +8579,13 @@ Object.assign(STRINGS, {
   ss_st_watch:     { en:'Needs monitoring', vi:'Cần theo dõi' },
   ss_st_off:       { en:'Off track', vi:'Chưa theo kịp' },
   ss_st_none:      { en:'No data yet', vi:'Chưa có dữ liệu' },
+  stl_good:        { en:'On track', vi:'Đạt' },
+  stl_watch:       { en:'Monitor', vi:'Theo dõi' },
+  stl_bad:         { en:'Needs attention', vi:'Cần chú ý' },
+  stl_how:         { en:'How are these colours worked out?', vi:'Màu sắc được tính như thế nào?' },
+  stl_rule_days:   { en:'Active days this week: {g}+ is on track, {w}–{g} is worth monitoring, below {w} needs attention.', vi:'Số ngày hoạt động tuần này: từ {g} trở lên là đạt, {w}–{g} cần theo dõi, dưới {w} cần chú ý.' },
+  stl_rule_share:  { en:'Share of a total (e.g. badges): {g}%+ is on track, {w}–{g}% is worth monitoring, below {w}% needs attention.', vi:'Tỷ lệ trên tổng (vd: huy hiệu): từ {g}% trở lên là đạt, {w}–{g}% cần theo dõi, dưới {w}% cần chú ý.' },
+  stl_rule_trend:  { en:'Everything else (XP, activities, reading, time…) is judged against the period right before it of the same length: flat or up is on track, down to 10% is worth monitoring, down more than that needs attention.', vi:'Các chỉ số khác (XP, hoạt động, đọc sách, thời gian…) được so với cùng khoảng thời gian liền trước: giữ nguyên hoặc tăng là đạt, giảm đến 10% cần theo dõi, giảm hơn thế cần chú ý.' },
   ss_title_good:   { en:'{name} is on track', vi:'{name} đang đi đúng hướng' },
   ss_title_watch:  { en:'{name} needs monitoring', vi:'{name} cần được theo dõi' },
   ss_title_off:    { en:'{name} is off track', vi:'{name} đang chưa theo kịp' },
@@ -8312,6 +8631,7 @@ Object.assign(STRINGS, {
   ss_best:         { en:'best {n}', vi:'cao nhất {n}' },
   ss_needs_update: { en:'Appears once this student’s StudentDeck is updated.', vi:'Sẽ hiển thị khi StudentDeck của học sinh này được cập nhật.' },
   ss_badge_n:      { en:'{n} of {total} badges unlocked.', vi:'Đã mở {n}/{total} huy hiệu.' },
+  ss_view_case:    { en:'View badge case →', vi:'Xem tủ huy hiệu →' },
   ss_badge_note:   { en:'StudentDeck doesn’t sync badges, so these are worked out with its own rules from the synced stats: XP total and level are exact; streaks, big days, variety, skills and habits use the last 200 days of synced activity, so an older achievement can be missing.', vi:'StudentDeck không đồng bộ huy hiệu, nên các huy hiệu này được tính bằng chính quy tắc của nó từ số liệu đã đồng bộ: tổng XP và cấp độ là chính xác; chuỗi ngày, ngày nổi bật, đa dạng, kỹ năng và thói quen dùng 200 ngày hoạt động gần nhất, nên thành tích cũ hơn có thể bị thiếu.' },
   ss_bg_xp:        { en:'Milestones', vi:'Mốc XP' },
   ss_bg_level:     { en:'Levels', vi:'Cấp độ' },
@@ -8357,6 +8677,21 @@ const SS_L = {
 const ssLabel = (g, k) => ((SS_L[g][state.lang === 'vi' ? 'vi' : 'en'] || {})[k]) || k;
 const SS_RULES = { hwGood:80, hwWatch:50, readGood:70, readWatch:30, daysGood:4, daysWatch:2, behWatch:1, behOff:2, behDays:14 };   // the same thresholds as ParentDeck's STATUS_RULES
 const SS_ICON = { good:'✅', watch:'👀', off:'⚠️', none:'⏳' };
+// Same stoplight formula/colours as AdminDeck's School Stats and ParentDeck's Student Summary — for "My Stats & XP"'s tile grid.
+// Same kinds as AdminDeck's School Stats (admindeck/js/schoolstats.js STOPLIGHT): 'days'/'share' judge an absolute number
+// against a target; 'trend' (used for every raw-count tile — XP, activities, reading, etc.) judges % change vs the
+// immediately-preceding period of equal length, exactly like AdminDeck's Homework/Reading/Focus/Active-time tiles —
+// there's no universal "good" XP total, but "up from last time" vs "down" always means something.
+const STOPLIGHT = { days:{ good:SS_RULES.daysGood, watch:SS_RULES.daysWatch, dir:'up' }, share:{ good:70, watch:40, dir:'up' }, trend:{ good:0, watch:-10, dir:'up' } };
+function stoplight(kind, v){ const r = STOPLIGHT[kind]; if(!r || v == null) return null;
+  const up = r.dir !== 'down';
+  if(up ? v >= r.good : v <= r.good) return 'good'; if(up ? v >= r.watch : v <= r.watch) return 'watch'; return 'bad'; }
+const stPct = (cur, prev) => (prev > 0 ? Math.round((cur - prev) / prev * 100) : null);   // same formula as AdminDeck's pct()
+// The colour key above any stoplight-tiled grid, same shape as AdminDeck's School Stats legend.
+function stoplightLegendHtml(){
+  return `<div class="ss-stlegend">${['good', 'watch', 'bad'].map(k => `<span class="ss-st ss-stkey" data-st="${k}">${t('stl_' + k)}</span>`).join('')}
+    <details><summary>${t('stl_how')}</summary><p>${t('stl_rule_days', { g:STOPLIGHT.days.good, w:STOPLIGHT.days.watch })}</p><p>${t('stl_rule_share', { g:STOPLIGHT.share.good, w:STOPLIGHT.share.watch })}</p><p>${t('stl_rule_trend')}</p></details></div>`;
+}
 const ssNum = n => Math.round(+n || 0).toLocaleString();
 const ssShift = (k, n) => { const d = new Date(k + 'T12:00'); d.setDate(d.getDate() + n); return actDayKey(d); };
 const ssActive = r => !!(r && ((r.xp || 0) > 0 || (r.readMin || 0) > 0 || (r.readEntries || 0) > 0 || (r.focus || 0) > 0 || (r.hw || 0) > 0 || (r.games || 0) > 0 || (r.idioms || 0) > 0));
@@ -8412,7 +8747,7 @@ function ssCountUp(el, delay = 0){       // 0 -> its own number, easing out (the
 }
 
 function renderStudentStats(body){
-  let roster = [], ledger = [], notes = [], firstLedger = true, sel = null, detail = null, oRange = 'week', dRange = 'week', fx = true, lastSig = '', tm = 0, badgeFilter = 'all';
+  let roster = [], ledger = [], notes = [], firstLedger = true, sel = null, detail = null, oRange = 'week', dRange = 'week', fx = true, lastSig = '', tm = 0;
   const seen = new Set(), unsubs = []; let detailUnsub = null;
   const esc = escHtml, chip = (attr, val, label, on) => `<button type="button" class="sx-chip${on ? ' on' : ''}" data-${attr}="${val}">${label}</button>`;
   const stopDetail = () => { if(detailUnsub){ try{ detailUnsub(); }catch(e){} detailUnsub = null; } detail = null; };
@@ -8423,14 +8758,19 @@ function renderStudentStats(body){
   const statusChip = o => `<span class="ss-stat st-${o}">${SS_ICON[o]} ${t('ss_st_' + o)}</span>`;
   const medalMini = list => list.map(b => `<span title="${esc(b.name)}">${medalHtml(b, true)}</span>`).join('');
   const rangeKeys = r => { const today = actDayKey(Date.now()); return r === 'today' ? [today] : Array.from({ length:7 }, (_, i) => ssShift(today, -i)); };
+  // The equal-length period right before oRange, for the same trend-vs-last-time stoplight AdminDeck's School Stats uses.
+  const prevRangeKeys = r => { const today = actDayKey(Date.now()); return r === 'today' ? [ssShift(today, -1)] : Array.from({ length:7 }, (_, i) => ssShift(today, -(7 + i))); };
+  const sumRoster = (rows, keys) => { const tot = { xp:0, hw:0 }; ACT_FIELDS.forEach(f => { tot[f] = 0; });
+    rows.forEach(r => keys.forEach(k => { const d = r.act.daily[k]; if(d){ ['xp', 'hw'].concat(ACT_FIELDS).forEach(f => { tot[f] += (+d[f] || 0); }); } })); return tot; };
 
   /* ----- the class ----- */
   function overviewHtml(){
     const keys = rangeKeys(oRange), rows = roster.map(s => ({ s, a:studentActivity(s), act:ActivityHub.get(s.id) || { homeworkDone:{}, daily:{} } }));
-    const tot = { xp:0, hw:0 }; ACT_FIELDS.forEach(f => { tot[f] = 0; });
-    rows.forEach(r => keys.forEach(k => { const d = r.act.daily[k]; if(d){ ['xp', 'hw'].concat(ACT_FIELDS).forEach(f => { tot[f] += (+d[f] || 0); }); } }));
+    const tot = sumRoster(rows, keys), prevTot = sumRoster(rows, prevRangeKeys(oRange));
+    const trendSt = (cur, prevVal) => stoplight('trend', stPct(cur, prevVal));
     const active = rows.filter(r => !isQuiet(r.a.lastActive) && (Date.now() - r.a.lastActive) <= 7 * 864e5).length;
-    const tiles = [[t('ca_active'), `${active}/${roster.length}`], [t('ss_tile_xp'), ssNum(tot.xp)], [t('ss_tile_hw'), ssNum(tot.hw)], [t('ca_reading'), ssNum(tot.readMin)], [t('ca_focus'), ssNum(tot.focus)], [t('ca_games'), ssNum(tot.games)], [t('ca_idioms'), ssNum(tot.idioms)], [t('ca_words'), ssNum(tot.wordsSaved)], [t('ca_cards'), ssNum(tot.cardsReviewed)]];
+    const activeSt = roster.length ? stoplight('share', Math.round(active / roster.length * 100)) : null;
+    const tiles = [[t('ca_active'), `${active}/${roster.length}`, activeSt], [t('ss_tile_xp'), ssNum(tot.xp), trendSt(tot.xp, prevTot.xp)], [t('ss_tile_hw'), ssNum(tot.hw), trendSt(tot.hw, prevTot.hw)], [t('ca_reading'), ssNum(tot.readMin), trendSt(tot.readMin, prevTot.readMin)], [t('ca_focus'), ssNum(tot.focus), trendSt(tot.focus, prevTot.focus)], [t('ca_games'), ssNum(tot.games), trendSt(tot.games, prevTot.games)], [t('ca_idioms'), ssNum(tot.idioms), trendSt(tot.idioms, prevTot.idioms)], [t('ca_words'), ssNum(tot.wordsSaved), trendSt(tot.wordsSaved, prevTot.wordsSaved)], [t('ca_cards'), ssNum(tot.cardsReviewed), trendSt(tot.cardsReviewed, prevTot.cardsReviewed)]];
     const sorted = rows.slice().sort((x, y) => (isQuiet(y.a.lastActive) - isQuiet(x.a.lastActive)) || String(x.s.displayName).localeCompare(String(y.s.displayName)));
     const cards = sorted.map(({ s, a, act }, n) => {
       const P = s.practice || {}, total = ssTotal(s, act.daily), L = levelInfo(total), pct = Math.round(L.into / L.need * 100), st = ssStatus(s, act, notes, ledger), medals = ssTopMedals(s, total), streak = ssStreak(P, act.daily).current;
@@ -8447,7 +8787,8 @@ function renderStudentStats(body){
     const feed = ledger.length ? ledger.slice(0, 20).map(e => { const self = e.awardedBy === 'self-redemption', d = +e.delta || 0;
       return `<div class="ca-feedrow${self ? ' redeem' : ''}"><span>${self ? '🎁' : (d >= 0 ? '🙂' : '🙁')}</span><span class="ca-name">${esc(nameOf(e.studentId))} — ${esc(e.reason || '')}</span><b>${d > 0 ? '+' : ''}${d}</b><span class="small-hint">${esc(shortWhen(tsMs(e.createdAt)))}</span></div>`; }).join('') : `<p class="small-hint">${t('ca_feed_none')}</p>`;
     return `<div class="ss-bar"><h3 class="ss-h">${t('ca_this_week')}</h3><div class="sx-range" role="group">${chip('or', 'today', t('stats_today'), oRange === 'today')}${chip('or', 'week', t('stats_week'), oRange === 'week')}</div></div>
-      <div class="sx-tiles">${tiles.map(([l, v], n) => `<div class="sx-tile" style="--n:${n}"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join('')}</div>
+      ${stoplightLegendHtml()}
+      <div class="sx-tiles">${tiles.map(([l, v, st], n) => `<div class="sx-tile" style="--n:${n}"${st ? ` data-st="${st}"` : ''}><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join('')}</div>
       <h3 class="ss-h ss-h2">${t('ca_students')}</h3><p class="small-hint">${t('ss_overview_hint')}</p><div class="ss-grid">${cards}</div>
       <div class="sx-grid">${card('📚 ' + t('ca_hw_title'), hwHtml, '', 0)}${card('🏅 ' + t('ca_feed_title'), `<div class="ss-feed">${feed}</div>`, '', 1)}</div>
       <p class="small-hint ss-foot">${t('ss_foot')}</p>`;
@@ -8462,7 +8803,7 @@ function renderStudentStats(body){
     keys.forEach(k => { const r = daily[k]; Object.keys(T).forEach(f => { T[f] += r[f] || 0; }); Object.entries(r.xpBy || {}).forEach(([a, n]) => { xpBy[a] = (xpBy[a] || 0) + n; }); Object.entries(r.timeBy || {}).forEach(([w, n]) => { timeBy[w] = (timeBy[w] || 0) + n; }); });
     const totalT = Object.values(timeBy).reduce((a, c) => a + c, 0), total = ssTotal(s, daily), L = levelInfo(total), pctL = Math.round(L.into / L.need * 100);
     const stk = ssStreak(P, daily), mult = ssMult(stk.current), st = ssStatus(s, act, notes, ledger), ctx = ssBadgeCtx(s, daily);
-    const earned = SS_BADGES.filter(b => b.val(ctx) >= b.need), nEarned = earned.length, prog = b => Math.min(1, b.val(ctx) / b.need);
+    const nEarned = SS_BADGES.filter(b => b.val(ctx) >= b.need).length;
     const days7 = [6, 5, 4, 3, 2, 1, 0].map(i => { const k = ssShift(today, -i); return { k, v:(daily[k] || {}).xp || 0 }; }), mx7 = Math.max(1, ...days7.map(d => d.v)), bestI = days7.reduce((b, d, i) => d.v > days7[b].v ? i : b, 0);
     const C = 188.5, none = !Object.keys(daily).length && !total;
     const xpRows = Object.keys(xpBy).map(k => ({ l:ssLabel('xs', k), v:xpBy[k], t:xpBy[k] + ' XP' })).filter(r => r.v).sort((a, c) => c.v - a.v);
@@ -8474,13 +8815,11 @@ function renderStudentStats(body){
     const headline = st.overall === 'none' ? t('ss_title_none') : t('ss_title_' + st.overall, { name:esc(s.displayName || '') });
     const sub = st.overall === 'none' ? t('ss_sub_none', { name:esc(s.displayName || '') }) : st.attention.length ? t('ss_sub_attn', { list:st.attention.join(', ') }) : t('ss_sub_good');
     const R = SS_RULES, how = `<details class="ss-how"><summary>${t('ss_how')}</summary><p>${t('ss_rule_hw', { g:R.hwGood, w:R.hwWatch })}</p><p>${t('ss_rule_read', { g:R.readGood, w:R.readWatch })}</p><p>${t('ss_rule_prac', { g:R.daysGood, w:R.daysWatch })}</p><p>${t('ss_rule_beh')}</p><p>${t('ss_rule_all')}</p></details>`;
-    let k = 0; const tile = b => { const on = b.val(ctx) >= b.need, i = k++;
-      return `<div class="bd t${b.tier}${on ? ' on' : ''}" data-on="${on ? 1 : 0}" style="--n:${i}" title="${esc(b.desc)}">${medalHtml(b, on)}<b>${esc(b.name)}</b><small>${esc(b.desc)}</small>${on ? '' : `<span class="bd-bar sx-xpbar"><i style="width:${Math.round(prog(b) * 100)}%"></i></span>`}</div>`; };
-    const next = SS_BADGES.filter(b => b.val(ctx) < b.need).sort((a, c) => prog(c) - prog(a)).slice(0, 3);
-    const badgesHtml = `<p class="small-hint">${t('ss_badge_n', { n:nEarned, total:SS_BADGES.length })}</p>
-      <div class="sx-range sx-range-sm" role="group">${[['all', 'bd_f_all'], ['on', 'bd_f_on'], ['off', 'bd_f_off']].map(([f, key]) => chip('bf', f, t(key), badgeFilter === f)).join('')}</div>
-      ${next.length ? `<p class="bd-next-h">${t('bd_next')}</p><div class="bd-next">${next.map(b => `<div class="bd-nx t${b.tier}">${medalHtml(b, false)}<div><b>${esc(b.name)}</b><small>${esc(b.desc)}</small><div class="bd-bar sx-xpbar"><i style="width:${Math.round(prog(b) * 100)}%"></i></div></div></div>`).join('')}</div>` : ''}
-      <div class="bgal" data-f="${badgeFilter}">${SS_GROUPS.map(g => `<h5>${t('ss_bg_' + g)}</h5><div class="bd-grid">${SS_BADGES.filter(b => b.group === g).map(tile).join('')}</div>`).join('')}</div><p class="small-hint">${t('ss_badge_note')}</p>`;
+    // The full badge gallery lives in the Badges & Rewards widget's own display case (badgeDetailHtml) — this is just a glance + a link there, not a second copy of it.
+    const topMedals = ssTopMedals(s, total);
+    const badgeSummary = `<p class="small-hint">${t('ss_badge_n', { n:nEarned, total:SS_BADGES.length })}</p>
+      ${topMedals.length ? `<span class="ss-medals">${medalMini(topMedals)}</span>` : ''}
+      <button type="button" class="wbtn" data-viewcase="${esc(s.id)}">${t('ss_view_case')}</button>`;
     const hwList = (state.assignments || []).slice().sort((x, y) => String(y.dueDate || '').localeCompare(String(x.dueDate || ''))).slice(0, 12).map(x => { const d = act.homeworkDone[x.id] && act.homeworkDone[x.id].done === true; return `<div class="srow"><span>${esc(x.title || '—')}</span><span class="muted">${esc(x.dueDate || '')}</span><b>${d ? '✅' : '·'}</b></div>`; }).join('') || `<p class="small-hint">${t('ca_hw_none')}</p>`;
     const sparkles = `<span class="ss-flame${stk.current ? '' : ' off'}" aria-hidden="true">${stk.current ? '🔥' : '💤'}</span>`;
     return `<div class="ss-bar"><button type="button" class="sx-chip" data-back>${t('ss_back')}</button><h3 class="ss-h">${esc(s.displayName || '')}</h3>${statusChip(st.overall)}
@@ -8497,7 +8836,7 @@ function renderStudentStats(body){
         ${card('🎮 ' + t('ss_h_games'), games ? (games.map(g => `<div class="srow"><span>${esc(g.name || '')}</span><span class="muted">${g.best !== null && g.best !== undefined ? t('ss_best', { n:g.best }) : ''}</span><b>${g.plays || 0}×</b></div>`).join('') || `<p class="small-hint">${t('stats_none')}</p>`) : `<p class="small-hint">${t('ss_needs_update')}</p>`, '', 5)}
         ${card('✨ ' + t('ss_h_recent'), recent.map(e => `<div class="srow"><span>${esc(new Date(e.t).toLocaleTimeString(state.lang || 'en', { hour:'2-digit', minute:'2-digit' }))} · ${esc(ssLabel('xs', e.s))}</span><b>+${esc(e.n)}</b></div>`).join('') || `<p class="small-hint">${t('stats_none')}</p>`, '', 6)}
         ${card('📚 ' + t('ss_h_hw'), hwList, '', 7)}
-        ${card('🏅 ' + t('ss_h_badges'), badgesHtml, 'wide', 8)}</div>
+        ${card('🏅 ' + t('ss_h_badges'), badgeSummary, '', 8)}</div>
       <p class="small-hint ss-foot">${t('ss_foot')}</p>`;
   }
 
@@ -8506,7 +8845,7 @@ function renderStudentStats(body){
     const host = body.querySelector('.ss-host'); if(!host) return;
     const html = sel ? detailHtml() : overviewHtml();
     if(html === null){ sel = null; stopDetail(); fx = true; return paint(); }
-    const sig = (sel || '') + '|' + oRange + dRange + badgeFilter + html;
+    const sig = (sel || '') + '|' + oRange + dRange + html;
     if(sig === lastSig && !fx) return;
     lastSig = sig; const keep = body.scrollTop;
     host.classList.toggle('fx-in', fx); host.innerHTML = html;
@@ -8532,7 +8871,7 @@ function renderStudentStats(body){
       if(e.target.closest('[data-back]')){ stopDetail(); sel = null; fx = true; paint(); return; }
       const o = e.target.closest('[data-or]'); if(o){ oRange = o.dataset.or; fx = true; paint(); return; }
       const d = e.target.closest('[data-dr]'); if(d){ dRange = d.dataset.dr; fx = true; paint(); return; }
-      const f = e.target.closest('[data-bf]'); if(f){ badgeFilter = f.dataset.bf; paint(); }
+      const vc = e.target.closest('[data-viewcase]'); if(vc){ requestBadgeCase(vc.dataset.viewcase); }
     });
     unsubs.push(ActivityHub.attach(schedule));
     unsubs.push(TDCloud.subscribeRoster(state.cloudClassId, list => { roster = list; ActivityHub.setRoster(list.map(s => s.id)); schedule(); }));
@@ -8620,6 +8959,7 @@ function renderCloudClass(body){
         <div class="cc-head"><b id="cc-class-name"></b></div>
         <div class="cc-links">${['rewardpoints', 'classactivity', 'noteshome', 'classbuilder'].map(id=> `<button type="button" class="wbtn" data-open="${id}">${escHtml(widgetLabel(id))}</button>`).join('')}</div>
         <div class="cc-codes" id="cc-codes"></div>
+        <details class="cc-adminnotes" id="cc-adminnotes" hidden><summary>📬 <span id="cc-an-label">${t('an_title')}</span></summary><div id="cc-an-list"></div></details>
         <div class="cc-rost-head">
           <p class="field-label" id="cc-roster-label">${t('cc_roster', {n:0})}</p>
           <button class="wbtn" id="cc-sync-names">${t('cc_sync_names')}</button>
@@ -8635,6 +8975,19 @@ function renderCloudClass(body){
               <option value="opt_out">hidden</option>
             </select>
           </div>
+          <div class="field-block">
+            <span class="field-label">🏫 ${t('cc_school')}</span>
+            <p class="small-hint" id="cc-school-now">${t('cc_school_none')}</p>
+            <div class="btn-row"><input type="text" id="cc-school-code" placeholder="XXXX-XXXX" autocomplete="off" spellcheck="false" style="max-width:130px"><button class="wbtn" id="cc-school-join">${t('cc_school_join')}</button></div>
+          </div>
+          <label class="switch-row"><span>${t('cc_pulse_label')}</span><input type="checkbox" id="cc-pulse"></label>
+          <p class="small-hint">${t('cc_pulse_hint')}</p>
+          <div class="field-block">
+            <span class="field-label">👪 ${t('cc_family_codes')}</span>
+            <p class="small-hint">${t('cc_family_hint')}</p>
+            <div class="btn-row"><button class="wbtn" id="cc-fam-show">${t('cc_family_show')}</button></div>
+            <div id="cc-fam-list"></div>
+          </div>
           <div class="btn-row"><button class="wbtn" id="cc-signout">${t('cc_sign_out')}</button></div>
         </details>
       </div>`;
@@ -8644,6 +8997,41 @@ function renderCloudClass(body){
 
     body.querySelector('#cc-visibility').addEventListener('change', async e=>{
       try{ await TDCloud.setRankingVisibility(state.cloudClassId, e.target.value); }
+      catch(err){ toastMsg(err.message||String(err)); }
+    });
+
+    // v0.21.2: Class Pulse on/off (ParentDeck's typical-range view) and the class's family codes (backend v2.0.0).
+    body.querySelector('#cc-pulse').addEventListener('change', async e=>{
+      try{ await TDCloud.setClassPulse(state.cloudClassId, e.target.checked); toast(t(e.target.checked ? 'cc_pulse_on' : 'cc_pulse_off')); }
+      catch(err){ e.target.checked = !e.target.checked; toastMsg(err.message||String(err)); }
+    });
+    async function showFamilyCodes(){
+      const box = body.querySelector('#cc-fam-list');
+      if(!box) return;
+      box.innerHTML = `<p class="small-hint">${t('cc_family_loading')}</p>`;
+      let codes;
+      try{ codes = await TDCloud.getFamilyCodes(state.cloudClassId); }
+      catch(err){ box.innerHTML = `<p class="small-hint">${escHtml(t('cc_family_unavailable'))}</p>`; return; }
+      if(!codes.length){ box.innerHTML = `<p class="small-hint">${t('cc_family_none')}</p>`; return; }
+      box.innerHTML = `<div class="cc-fam-rows">${codes.map(c=> `<div class="cc-fam-row"><span>${escHtml(c.displayName || '—')}</span><code>${escHtml(c.familyCode)}</code><button class="wbtn cc-fam-new" data-id="${escHtml(c.studentId)}" title="${escHtml(t('cc_family_new_title'))}">↻</button></div>`).join('')}</div>
+        <div class="btn-row"><button class="wbtn" id="cc-fam-copy">${t('cc_family_copy')}</button></div>`;
+      box.querySelector('#cc-fam-copy').addEventListener('click', ()=>{
+        const text = codes.map(c=> `${c.displayName}\t${c.familyCode}`).join('\n');
+        (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(()=> toast(t('cc_family_copied')), ()=> toast(t('cc_family_copy_failed')));
+      });
+      box.querySelectorAll('.cc-fam-new').forEach(b=> b.addEventListener('click', async ()=>{
+        if(!confirm(t('cc_family_new_confirm'))) return;
+        try{ await TDCloud.regenerateFamilyCode(state.cloudClassId, b.dataset.id); showFamilyCodes(); }
+        catch(err){ toastMsg(err.message||String(err)); }
+      }));
+    }
+    body.querySelector('#cc-fam-show').addEventListener('click', showFamilyCodes);
+
+    // v0.21.3 (backend v2.1.0): join a school with the code from your school admin; notes from the school admin.
+    body.querySelector('#cc-school-join').addEventListener('click', async ()=>{
+      const code = body.querySelector('#cc-school-code').value.trim();
+      if(!code){ toast(t('cc_school_need_code')); return; }
+      try{ const r = await TDCloud.joinSchool(code); body.querySelector('#cc-school-code').value = ''; toast(t('cc_school_joined', { name: r.schoolName })); }
       catch(err){ toastMsg(err.message||String(err)); }
     });
 
@@ -8663,6 +9051,22 @@ function renderCloudClass(body){
     });
 
     stopSubs();
+    if(TDCloud.subscribeMySchool) unsubs.push(TDCloud.subscribeMySchool(s=>{
+      const el = body.querySelector('#cc-school-now'); if(el) el.textContent = s && s.schoolName ? t('cc_school_in', { name: s.schoolName }) : t('cc_school_none');
+    }));
+    if(TDCloud.subscribeAdminNotes){ let seen = null; unsubs.push(TDCloud.subscribeAdminNotes(list=>{
+      const box = body.querySelector('#cc-adminnotes'); if(!box) return;
+      if(!list){ box.hidden = true; return; }
+      box.hidden = list.length === 0;
+      const unread = list.filter(n=> !n.read);
+      body.querySelector('#cc-an-label').textContent = unread.length ? t('an_title_new', { n: unread.length }) : t('an_title');
+      if(seen && unread.some(n=> !seen.has(n.id))) toast(t('an_toast'));
+      seen = new Set(list.map(n=> n.id));
+      body.querySelector('#cc-an-list').innerHTML = list.map(n=> `<div class="an-item ${n.read ? '' : 'unread'}" data-id="${escHtml(n.id)}">
+        <div class="an-top">${n.subject ? `<b>${escHtml(n.subject)}</b>` : ''}<span class="small-hint">${escHtml(n.from || '')}${n.createdAtMs ? ' · ' + new Date(n.createdAtMs).toLocaleDateString() : ''}</span></div>
+        <div class="an-text">${escHtml(n.text || '')}</div>${n.read ? '' : `<button class="wbtn an-ok">${t('an_gotit')}</button>`}</div>`).join('');
+      body.querySelectorAll('.an-ok').forEach(b=> b.addEventListener('click', ()=> TDCloud.markAdminNoteRead(b.closest('.an-item').dataset.id).catch(err=> toastMsg(err.message||String(err)))));
+    })); }
     unsubs.push(TDCloud.subscribeClass(state.cloudClassId, cls=>{
       cloudClass = cls;
       const codesEl = body.querySelector('#cc-codes');
@@ -8683,6 +9087,8 @@ function renderCloudClass(body){
         return;
       }
       const nmEl = body.querySelector('#cc-class-name'); if(nmEl) nmEl.textContent = cls.className || '';
+      const pulseEl = body.querySelector('#cc-pulse');   // same default as the backend: on, unless never set and rankings are hidden
+      if(pulseEl) pulseEl.checked = cls.classPulse === true || (cls.classPulse === undefined && cls.rankingVisibility !== 'opt_out');
       if(!codesEl) return;
       codesEl.innerHTML = `
         <div class="cc-code-row"><span>${t('cc_student_code')}: <b>${escHtml(cls.studentJoinCode)}</b></span>
@@ -8933,8 +9339,10 @@ function renderNotesHome(body){
     q('#nh-students').addEventListener('click', e=>{
       if(e.target.closest('input[type=checkbox]')) return;          // the tick is handled by its own change event
       const row = e.target.closest('[data-thread]'); if(!row) return;
-      filterId = row.dataset.thread === filterId ? '' : row.dataset.thread; firstThread = true;
-      renderStudents(); renderHistory();
+      const id = row.dataset.thread;
+      filterId = id === filterId ? '' : id; firstThread = true;
+      selected.clear(); if(filterId) selected.add(filterId);        // opening a conversation defaults the composer to reply to them, like a real messenger
+      renderStudents(); renderChips(); renderHistory();
     });
     q('#nh-chips').addEventListener('click', e=>{
       const x = e.target.closest('[data-unpick]'); if(!x) return;
@@ -8988,13 +9396,12 @@ function renderNotesHome(body){
       const row = document.createElement('div'); row.className = 'nh-prow' + (filterId === s.id ? ' on' : ''); row.dataset.thread = s.id; row.setAttribute('role', 'button'); row.tabIndex = 0;
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = s.id; cb.checked = selected.has(s.id); cb.title = t('nh_send_to'); cb.setAttribute('aria-label', `${t('nh_send_to')}: ${s.displayName || ''}`);
       cb.addEventListener('change', ()=>{ if(cb.checked) selected.add(s.id); else selected.delete(s.id); updateCount(); renderChips(); });
-      const av = document.createElement('span'); av.className = 'nh-av'; av.textContent = (s.displayName || '?').trim().charAt(0).toUpperCase();
       const main = document.createElement('div'); main.className = 'nh-pmain';
       const nm = document.createElement('b'); nm.textContent = s.displayName || '—';
       if(dup){ const d = document.createElement('span'); d.className = 'cc-dup-badge'; d.title = t('cc_dup_name_hint'); d.textContent = '⚠️'; nm.append(' ', d); }
       const sm = document.createElement('small'); sm.textContent = ln ? `${ln.mood === 'frowny' ? '🙁' : '🙂'} ${ln.text || (ln.mood === 'frowny' ? t('nh_frowny') : t('nh_smiley'))}` : t('nh_no_notes_yet');
       main.append(nm, sm);
-      row.append(cb, av, main);
+      row.append(cb, main);
       if(when){ const w = document.createElement('span'); w.className = 'nh-pwhen'; w.textContent = fmtDayLabel(when) === t('ca_today') ? fmtClock(when) : fmtDayLabel(when); row.append(w); }
       if(unreadBy[s.id]){ const dt = document.createElement('span'); dt.className = 'nh-dot'; dt.textContent = unreadBy[s.id]; dt.title = t('nh_unread_count', { n:unreadBy[s.id] }); row.append(dt); }
       box.appendChild(row);
@@ -9042,10 +9449,13 @@ function renderNotesHome(body){
       const msg = document.createElement('div'); msg.className = 'nh-msg' + (g.mood === 'frowny' ? ' frowny' : '');
       const head = document.createElement('div'); head.className = 'nh-msg-head';
       const face = document.createElement('span'); face.className = 'nh-face'; face.textContent = g.mood === 'frowny' ? '🙁' : '🙂';
-      const who = document.createElement('b'); who.className = 'nh-note-name';
-      who.textContent = total === 1 ? `${t('nh_to')}: ${nameOf(g.notes[0].studentId)}` : `${t('nh_to')}: ${t('nh_n_students', { n:total })}`;
-      if(total > 1) who.title = g.notes.map(n=> nameOf(n.studentId)).join(', ');
-      head.append(face, who);
+      head.append(face);
+      if(!filterId){      // "To: X" only adds information in the combined All-notes view — redundant inside a single student's own thread
+        const who = document.createElement('b'); who.className = 'nh-note-name';
+        who.textContent = total === 1 ? `${t('nh_to')}: ${nameOf(g.notes[0].studentId)}` : `${t('nh_to')}: ${t('nh_n_students', { n:total })}`;
+        if(total > 1) who.title = g.notes.map(n=> nameOf(n.studentId)).join(', ');
+        head.append(who);
+      }
       msg.append(head);
       if(g.text){ const tx = document.createElement('div'); tx.className = 'nh-note-text'; tx.textContent = g.text; msg.append(tx); }
       const foot = document.createElement('div'); foot.className = 'nh-msg-foot';
@@ -9090,7 +9500,7 @@ function renderNotesHome(body){
       const res = await TDCloud.sendNotesHome(state.cloudClassId, ids, mood, text, nhLoadSignAs());
       track('notehome', (res.sent || 1) + ' sent', res.sent || 1);
       toast(res.sent === 1 ? t('nh_sent_one') : t('nh_sent_many', { n: res.sent }));
-      selected.clear(); mood = null; ta.value = '';
+      selected.clear(); if(filterId) selected.add(filterId); mood = null; ta.value = '';   // re-sync with whatever thread is still open, so a second note doesn't need re-selecting
       q('#nh-counter').textContent = `0/${NH_MAX}`;
       firstThread = true; paintMood(); renderStudents(); renderChips(); renderHistory();
     }catch(e){ showHint(friendlyError(e), true); }
@@ -9505,10 +9915,96 @@ function cbPrintSlips(cls){
 
 /* ---- Settings + top-right class switcher hand over to Class Builder ---- */
 
+/* v0.21.2 strings: attendance shared with families, Class Pulse switch, family codes. Languages not listed fall back to English. */
+Object.assign(STRINGS, {
+  att_share_label:     { en:'Share with families (ParentDeck)', vi:'Chia sẻ với phụ huynh (ParentDeck)' },
+  att_share_off:       { en:'Off: attendance stays on this device.', vi:'Tắt: điểm danh chỉ lưu trên máy này.' },
+  att_share_on:        { en:'On: present / late / absent is shared with each child\u2019s own parents. {n} of {total} names are matched to the cloud class.', vi:'Bật: có mặt / muộn / vắng được chia sẻ với phụ huynh của từng em. {n}/{total} tên đã khớp với lớp trên mạng.' },
+  att_share_confirm:   { en:'Share attendance with families? Each parent sees only their own child\u2019s present / late / absent days (no notes). Your records from the last year will be shared now.', vi:'Chia sẻ điểm danh với phụ huynh? Mỗi phụ huynh chỉ thấy ngày có mặt / muộn / vắng của con mình (không có ghi chú). Dữ liệu của năm qua sẽ được chia sẻ ngay.' },
+  att_unshare_confirm: { en:'Stop sharing. Also remove the days already shared from ParentDeck? (OK = remove, Cancel = keep them visible)', vi:'Dừng chia sẻ. Xóa luôn các ngày đã chia sẻ khỏi ParentDeck? (OK = xóa, Hủy = giữ lại)' },
+  att_share_failed:    { en:'Attendance couldn\u2019t be shared right now (offline, or the backend is older than v2.0.0). It is still saved here.', vi:'Chưa chia sẻ được điểm danh (mất mạng hoặc máy chủ cũ hơn v2.0.0). Dữ liệu vẫn được lưu tại đây.' },
+  cc_pulse_label:      { en:'Class Pulse for families', vi:'Class Pulse cho phụ huynh' },
+  cc_pulse_hint:       { en:'Parents who turn it on see their child\u2019s week beside the typical range for the class: ranges only, never names, ranks or another child\u2019s numbers. Classes under 5 students never show it.', vi:'Phụ huynh bật tính năng này sẽ thấy tuần của con bên cạnh khoảng phổ biến của lớp: chỉ là khoảng số, không có tên, thứ hạng hay số liệu của em khác. Lớp dưới 5 học sinh không hiển thị.' },
+  cc_pulse_on:         { en:'Class Pulse is on for this class.', vi:'Đã bật Class Pulse cho lớp này.' },
+  cc_pulse_off:        { en:'Class Pulse is off for this class.', vi:'Đã tắt Class Pulse cho lớp này.' },
+  cc_school:           { en:'School', vi:'Trường' },
+  cc_school_none:      { en:'Not in a school yet. Enter the school code from your school admin to join; your classes move with you.', vi:'Chưa thuộc trường nào. Nhập mã trường do quản trị viên cung cấp để tham gia; các lớp của bạn sẽ chuyển theo.' },
+  cc_school_in:        { en:'You are in {name}. Your school admin sees your classes in AdminDeck. Another code moves you and your classes.', vi:'Bạn thuộc {name}. Quản trị viên trường xem được các lớp của bạn trong AdminDeck. Nhập mã khác để chuyển trường.' },
+  cc_school_join:      { en:'Join', vi:'Tham gia' },
+  cc_school_need_code: { en:'Enter the school code first.', vi:'Hãy nhập mã trường trước.' },
+  cc_school_joined:    { en:'You joined {name}.', vi:'Bạn đã tham gia {name}.' },
+  an_title:            { en:'From your school', vi:'Từ nhà trường' },
+  an_title_new:        { en:'From your school ({n} new)', vi:'Từ nhà trường ({n} mới)' },
+  an_gotit:            { en:'✓ Got it', vi:'✓ Đã xem' },
+  an_toast:            { en:'📬 New note from your school (Cloud Class)', vi:'📬 Có ghi chú mới từ nhà trường (Cloud Class)' },
+  cc_family_codes:     { en:'Family codes', vi:'Mã gia đình' },
+  cc_family_hint:      { en:'Each student has their own code; their parents type it into ParentDeck to link. Students see theirs in StudentDeck \u2192 Class. Give each code only to that child\u2019s family.', vi:'Mỗi học sinh có mã riêng; phụ huynh nhập mã vào ParentDeck để liên kết. Học sinh xem mã trong StudentDeck \u2192 Lớp. Chỉ đưa mỗi mã cho đúng gia đình của em đó.' },
+  cc_family_show:      { en:'Show family codes', vi:'Hiện mã gia đình' },
+  cc_family_loading:   { en:'Loading\u2026', vi:'Đang tải\u2026' },
+  cc_family_none:      { en:'No students have joined this class yet.', vi:'Chưa có học sinh nào tham gia lớp này.' },
+  cc_family_unavailable:{ en:'Family codes need backend v2.0.0 or later.', vi:'Mã gia đình cần máy chủ phiên bản v2.0.0 trở lên.' },
+  cc_family_copy:      { en:'Copy all', vi:'Sao chép tất cả' },
+  cc_family_copied:    { en:'Family codes copied.', vi:'Đã sao chép mã gia đình.' },
+  cc_family_copy_failed:{ en:'Couldn\u2019t copy. Select the codes and copy them by hand.', vi:'Không sao chép được. Hãy chọn và sao chép thủ công.' },
+  cc_family_new_title: { en:'Make a new code (if this one reached the wrong family)', vi:'Tạo mã mới (nếu mã này đến nhầm gia đình)' },
+  cc_family_new_confirm:{ en:'Make a new family code for this student? The old code stops working. Parents already linked stay linked.', vi:'Tạo mã gia đình mới cho học sinh này? Mã cũ sẽ ngừng hoạt động. Phụ huynh đã liên kết vẫn giữ liên kết.' },
+});
+
+/* v0.27.0 (backend v2.8.0) strings: Scrapbook Review (Scrapdeck M3). Languages not listed fall back to English. */
+Object.assign(STRINGS, {
+  srv_need_class:   { en:'Link this class to the cloud (Cloud Class) to review pages students share from Scrapdeck.', vi:'Liên kết lớp này với đám mây (Lớp học đám mây) để duyệt các trang học sinh chia sẻ từ Scrapdeck.' },
+  srv_gallery_label:{ en:'Classmates’ gallery', vi:'Thư viện của cả lớp' },
+  srv_gallery_hint: { en:'When on, pages approved and shared “to my class” also appear in a gallery classmates can browse in StudentDeck (first names only). Off by default.', vi:'Khi bật, các trang đã duyệt và chia sẻ “với lớp của tôi” sẽ xuất hiện trong thư viện mà bạn cùng lớp có thể xem trong StudentDeck (chỉ tên). Mặc định tắt.' },
+  srv_f_pending:    { en:'Waiting', vi:'Đang chờ' },
+  srv_f_approved:   { en:'Approved', vi:'Đã duyệt' },
+  srv_f_hidden:     { en:'Hidden', vi:'Đã ẩn' },
+  srv_f_all:        { en:'All', vi:'Tất cả' },
+  srv_empty:        { en:'Nothing here yet.', vi:'Chưa có gì ở đây.' },
+  srv_loading:      { en:'Loading…', vi:'Đang tải…' },
+  srv_aud_family:   { en:'family', vi:'gia đình' },
+  srv_aud_class:    { en:'class', vi:'lớp' },
+  srv_status_pending: { en:'waiting for your review', vi:'đang chờ bạn duyệt' },
+  srv_status_approved:{ en:'approved', vi:'đã duyệt' },
+  srv_status_hidden:  { en:'hidden', vi:'đã ẩn' },
+  srv_approve:      { en:'✓ Approve', vi:'✓ Duyệt' },
+  srv_hide:         { en:'Hide', vi:'Ẩn' },
+  srv_toast_approved:{ en:'Approved — the family/class can now see it.', vi:'Đã duyệt — gia đình/lớp có thể xem.' },
+  srv_toast_hidden: { en:'Hidden.', vi:'Đã ẩn.' },
+  srv_action_fail:  { en:'Couldn’t do that right now — try again.', vi:'Không thực hiện được — hãy thử lại.' },
+  srv_load_fail:    { en:'Couldn’t load shared pages right now.', vi:'Không tải được các trang đã chia sẻ.' },
+});
+
+/* v0.29.0 (backend v2.9.0) strings: Board Assignments review (DrawDeck scope step D). Languages not listed fall back to English. */
+Object.assign(STRINGS, {
+  brv_need_class: { en:'Link this class to the cloud (Cloud Class) to review board assignments.', vi:'Liên kết lớp này với đám mây (Lớp học đám mây) để duyệt bài giao trên bảng.' },
+  brv_none:       { en:'No assignments yet — push a page from DrawDeck’s More menu (“Assign this page to students”).', vi:'Chưa có bài giao nào — hãy gửi một trang từ menu Thêm của DrawDeck (“Giao trang này cho học sinh”).' },
+  brv_open:       { en:'Open', vi:'Đang mở' },
+  brv_closed:     { en:'Closed', vi:'Đã đóng' },
+  brv_review:     { en:'Review', vi:'Duyệt' },
+  brv_close:      { en:'Close', vi:'Đóng' },
+  brv_reopen:     { en:'Reopen', vi:'Mở lại' },
+  brv_back:       { en:'← All assignments', vi:'← Tất cả bài giao' },
+  brv_empty:      { en:'No submissions yet.', vi:'Chưa có bài nộp nào.' },
+  brv_submitted:  { en:'Submitted — not graded yet', vi:'Đã nộp — chưa chấm' },
+  brv_graded:     { en:'Graded — +{n} XP', vi:'Đã chấm — +{n} XP' },
+  brv_xp_ph:      { en:'XP', vi:'XP' },
+  brv_award:      { en:'Award', vi:'Trao thưởng' },
+  brv_award_reason:{ en:'Board assignment: {title}', vi:'Bài giao trên bảng: {title}' },
+  brv_awarded:    { en:'Awarded {n} XP!', vi:'Đã trao {n} XP!' },
+  brv_amount_zero:{ en:'Enter how much XP to award.', vi:'Nhập số XP muốn trao.' },
+  brv_action_fail:{ en:'Couldn’t do that right now — try again.', vi:'Không thực hiện được — hãy thử lại.' },
+  brv_load_fail:  { en:'Couldn’t load submissions right now.', vi:'Không tải được bài nộp.' },
+});
+
 /* v0.21.0 strings: Reward Points, Notes Home mail layout, Cloud Class. Languages not listed fall back to English. */
 Object.assign(STRINGS, {
-  rewardpoints:     { en:'🎁 Reward Points', vi:'🎁 Điểm thưởng' },
-  wc_rewardpoints:  { en:'Your rewards catalog, what students redeemed, and everyone’s class points.', vi:'Danh mục phần thưởng, những gì học sinh đã đổi, và điểm lớp của mọi người.' },
+  rewardpoints:     { en:'🏅 Badges & Rewards', vi:'🏅 Huy hiệu & Điểm thưởng' },
+  wc_rewardpoints:  { en:'Each student’s badges (automatic, no setup), plus your rewards catalog, what students redeemed, and everyone’s class points.', vi:'Huy hiệu của từng học sinh (tự động, không cần thiết lập), cùng danh mục phần thưởng, những gì học sinh đã đổi, và điểm lớp của mọi người.' },
+  rp_tab_badges:    { en:'🏅 Badges', vi:'🏅 Huy hiệu' },
+  rp_tab_rewards:   { en:'🎁 Rewards', vi:'🎁 Điểm thưởng' },
+  rp_badges_none_yet:{ en:'No badges yet', vi:'Chưa có huy hiệu' },
+  rp_top_badge:     { en:'Top badge', vi:'Huy hiệu cao nhất' },
+  rp_redeemed_by:   { en:'Rewards redeemed by {name}', vi:'Phần thưởng {name} đã đổi' },
   rp_desc_ph:       { en:'Description (optional)', vi:'Mô tả (tùy chọn)' },
   rp_afford:        { en:'{n} of {m} students can afford this', vi:'{n}/{m} học sinh đủ điểm đổi' },
   rp_off:           { en:'Hidden from students', vi:'Đang ẩn với học sinh' },
@@ -9537,8 +10033,8 @@ Object.assign(STRINGS, {
 STRINGS.stats = { en:'📈 My Stats & XP', vi:'Thống kê & XP của tôi' };
 STRINGS.xp_pill_tip = { en:'My Stats & XP — click to open', vi:'Thống kê & XP của tôi — nhấn để mở' };
 STRINGS.files_time_hint = { en:'📄 Time you spend with a document open counts toward My Stats & XP.', vi:'📄 Thời gian mở tài liệu được tính vào Thống kê & XP của tôi.' };
-STRINGS.bd_have_one = { en:'🏅 You already earned 1 badge! Open My Stats & XP to see it.', vi:'🏅 Bạn đã đạt 1 huy hiệu! Mở Thống kê & XP của tôi để xem.' };
-STRINGS.bd_have_many = { en:'🏅 You already earned {n} badges! Open My Stats & XP to see them.', vi:'🏅 Bạn đã đạt {n} huy hiệu! Mở Thống kê & XP của tôi để xem.' };
+STRINGS.bd_have_one = { en:'🏅 You already earned 1 badge! Open your Badge Display Case to see it.', vi:'🏅 Bạn đã đạt 1 huy hiệu! Mở Tủ huy hiệu để xem.' };
+STRINGS.bd_have_many = { en:'🏅 You already earned {n} badges! Open your Badge Display Case to see them.', vi:'🏅 Bạn đã đạt {n} huy hiệu! Mở Tủ huy hiệu để xem.' };
 
 /* ---------------- Reward Points (v0.21.0) ----------------
    The rewards catalog moved here from Cloud Class: add / hide / delete rewards, who can afford each one, what students recently redeemed, and every
@@ -9550,12 +10046,22 @@ function openWidgetSmart(id){          // open it, un-minimise it or bring it to
   const lay = state.layout[id]; if(lay && lay.minimized) toggleMinimize(id);
   const o = widgetEls[id]; if(o) bringToFront(o.el);
 }
+// The "View badge case" button on a student's card (Student Stats) calls requestBadgeCase(): it opens (or un-minimises) the
+// Badges & Rewards widget with that student's own display case already showing — same pattern as requestNotesHome().
+let rpPendingStudent = null;
+function requestBadgeCase(studentId){
+  rpPendingStudent = studentId;
+  openWidgetSmart('rewardpoints');
+  document.dispatchEvent(new CustomEvent('td:rewardpoints-pending'));
+}
 function renderRewardPoints(body){
   const unsubs = []; let rewards = [], roster = [], ledger = [], shownClassId = null;
+  let activeTab = 'badges', badgesSel = null;   // v0.22.0: Badges tab is read-only/automatic, so it's the default — zero setup needed
   const stopSubs = ()=>{ unsubs.forEach(u=>{ try{ u(); }catch(e){} }); unsubs.length = 0; };
   const q = s => body.querySelector(s), esc = escHtml;
   const hint = (msg, err)=>{ const el = q('#rp-hint'); if(el){ el.textContent = msg || ''; el.classList.toggle('cc-error', !!err); } };
   const active = r => r.active !== false;
+  const medalMini = list => list.map(b=> `<span title="${esc(b.name)}">${medalHtml(b, true)}</span>`).join('');
 
   function draw(){
     stopSubs(); shownClassId = state.cloudClassId || null;
@@ -9570,7 +10076,12 @@ function renderRewardPoints(body){
       q('#rp-open-cc').addEventListener('click', ()=> openWidgetSmart('cloudclass'));
       return;
     }
-    body.innerHTML = `<div class="rp-wrap"><div class="rp">
+    body.innerHTML = `<div class="rp-tabs" role="tablist">
+        <button type="button" class="rp-tab${activeTab === 'badges' ? ' active' : ''}" data-tab="badges" role="tab" aria-selected="${activeTab === 'badges'}">${t('rp_tab_badges')}</button>
+        <button type="button" class="rp-tab${activeTab === 'rewards' ? ' active' : ''}" data-tab="rewards" role="tab" aria-selected="${activeTab === 'rewards'}">${t('rp_tab_rewards')}</button>
+      </div>
+      <div class="rp-pane" id="rp-pane-badges" ${activeTab === 'badges' ? '' : 'hidden'}></div>
+      <div class="rp-pane" id="rp-pane-rewards" ${activeTab === 'rewards' ? '' : 'hidden'}><div class="rp-wrap"><div class="rp">
       <section class="rp-left">
         <p class="field-label">${t('cc_rewards')}</p>
         <div class="rp-add">
@@ -9585,7 +10096,13 @@ function renderRewardPoints(body){
       <section class="rp-right">
         <p class="field-label">${t('rp_redeemed')}</p><div class="rp-feed" id="rp-feed"></div>
         <p class="field-label">${t('rp_balances')}</p><div class="rp-bal" id="rp-bal"></div>
-      </section></div></div>`;
+      </section></div></div></div>`;
+    body.querySelectorAll('.rp-tab').forEach(btn=> btn.addEventListener('click', ()=>{
+      activeTab = btn.dataset.tab;
+      body.querySelectorAll('.rp-tab').forEach(b=>{ b.classList.toggle('active', b === btn); b.setAttribute('aria-selected', String(b === btn)); });
+      q('#rp-pane-badges').hidden = activeTab !== 'badges';
+      q('#rp-pane-rewards').hidden = activeTab !== 'rewards';
+    }));
     q('#rp-add').addEventListener('click', async ()=>{
       const name = q('#rp-name').value.trim(), cost = parseInt(q('#rp-cost').value, 10), description = q('#rp-desc').value.trim();
       if(!name || !Number.isFinite(cost) || cost <= 0) return;
@@ -9602,8 +10119,64 @@ function renderRewardPoints(body){
       else if(e.target.closest('[data-del]')){ if(confirm(t('rp_delete_confirm', { name:r.name }))) TDCloud.deleteReward(state.cloudClassId, r.id).catch(err=> hint(err.message || String(err), true)); }
     });
     unsubs.push(TDCloud.subscribeRewards(state.cloudClassId, list=>{ rewards = list; paintList(); }));
-    unsubs.push(TDCloud.subscribeRoster(state.cloudClassId, list=>{ roster = list; paintList(); paintBal(); }));
+    unsubs.push(TDCloud.subscribeRoster(state.cloudClassId, list=>{ roster = list; paintList(); paintBal(); if(rpPendingStudent) applyPending(); else paintBadges(); }));
     unsubs.push(TDCloud.subscribeLedger(state.cloudClassId, rows=>{ ledger = rows; paintFeed(); }));
+    unsubs.push(ActivityHub.attach(()=> paintBadges()));
+  }
+  // A "View badge case" click elsewhere (Student Stats) calls requestBadgeCase(), which sets rpPendingStudent and opens
+  // this widget. applyPending() switches to the Badges tab with that student already selected — once per request.
+  function applyPending(){
+    if(!rpPendingStudent || !roster.some(s=> s.id === rpPendingStudent)) return;
+    activeTab = 'badges'; badgesSel = rpPendingStudent; rpPendingStudent = null;
+    body.querySelectorAll('.rp-tab').forEach(b=>{ const on = b.dataset.tab === 'badges'; b.classList.toggle('active', on); b.setAttribute('aria-selected', String(on)); });
+    const pb = q('#rp-pane-badges'), pr = q('#rp-pane-rewards'); if(pb) pb.hidden = false; if(pr) pr.hidden = true;
+    paintBadges();
+  }
+  const onPending = ()=> applyPending();
+  document.addEventListener('td:rewardpoints-pending', onPending);
+  // ---------------- Badges (v0.22.0): fully automatic, read-only — nothing for a teacher to set up.
+  // Same recomputed-from-synced-stats badge engine as Student Stats (SS_BADGES/ssBadgeCtx), scoped to the
+  // whole roster instead of one student at a time. ActivityHub is a shared app-wide cache, so this doesn't
+  // open any new Firestore listeners beyond what's already paid for if Student Stats is also open.
+  function paintBadges(){
+    const box = q('#rp-pane-badges'); if(!box) return;
+    ActivityHub.setRoster(roster.map(s=> s.id));
+    if(badgesSel){
+      const s = roster.find(x=> x.id === badgesSel);
+      if(s){ box.innerHTML = badgeDetailHtml(s); box.querySelector('[data-back]').addEventListener('click', ()=>{ badgesSel = null; paintBadges(); }); return; }
+      badgesSel = null;
+    }
+    box.innerHTML = roster.length ? `<p class="small-hint">${t('ss_overview_hint')}</p><div class="ss-grid">${roster.slice().sort((a, b)=> String(a.displayName).localeCompare(String(b.displayName))).map(s=>{
+        const daily = (ActivityHub.get(s.id) || {}).daily || {}, total = ssTotal(s, daily), medals = ssTopMedals(s, total);
+        const nEarned = SS_BADGES.filter(b=> b.val(ssBadgeCtx(s, daily)) >= b.need).length;
+        return `<button type="button" class="ss-stu" data-sid="${esc(s.id)}" aria-label="${esc(t('ss_open', { name:s.displayName || '' }))}">
+          <span class="ss-stu-top"><span class="ss-stu-name"><b>${esc(s.displayName || '')}</b></span></span>
+          <span class="ss-medals">${medals.length ? medalMini(medals) : `<span class="muted">${t('rp_badges_none_yet')}</span>`}</span>
+          <span class="small-hint">${t('ss_badge_n', { n:nEarned, total:SS_BADGES.length })}</span></button>`;
+      }).join('')}</div>` : `<p class="small-hint">${t('cc_no_students')}</p>`;
+    box.querySelectorAll('[data-sid]').forEach(btn=> btn.addEventListener('click', ()=>{ badgesSel = btn.dataset.sid; paintBadges(); }));
+  }
+  function badgeDetailHtml(s){
+    const daily = (ActivityHub.get(s.id) || {}).daily || {}, ctx = ssBadgeCtx(s, daily);
+    const prog = b=> Math.min(1, b.val(ctx) / b.need);
+    const norm = b=> ({ ...b, on:b.val(ctx) >= b.need, progress:prog(b) });   // no countLine/earnedLine: no per-badge unit label or earn date for this recomputed engine
+    const earned = SS_BADGES.filter(b=> b.val(ctx) >= b.need), nEarned = earned.length;
+    const next = SS_BADGES.filter(b=> b.val(ctx) < b.need).sort((a, c)=> prog(c) - prog(a)).slice(0, 3).map(norm);
+    // No earn-date here (these badges are recomputed from synced stats, not stored with a timestamp like StudentDeck's own), so the hero spot is the highest-tier earned badge, not the most recent.
+    const spot = earned.slice().sort((a, c)=> c.tier - a.tier)[0];
+    const prizes = ledger.filter(e=> e.awardedBy === 'self-redemption' && e.studentId === s.id).slice(0, 12);
+    const countLabel = t('ss_badge_n', { n:nEarned, total:SS_BADGES.length });
+    const shelves = SS_GROUPS.map(g=> [t('ss_bg_' + g), SS_BADGES.filter(b=> b.group === g).map(b=> bcTileHtml(norm(b))).join('')]);
+    return `<button type="button" class="sx-chip" data-back>${t('ss_back')}</button>
+      <h3 class="ss-h">${esc(s.displayName || '')}</h3>
+      ${bcHeroHtml(spot && norm(spot), countLabel, spot ? `<p class="muted bc-last">${t('rp_top_badge')}: <b>${esc(spot.name)}</b></p>` : '', countLabel)}
+      ${next.length ? `<p class="bd-next-h">${t('bd_next')}</p><div class="bd-next">${next.map(bcNextUpHtml).join('')}</div>` : ''}
+      ${bcCabinetHtml(shelves)}
+      <p class="small-hint">${t('ss_badge_note')}</p>
+      <section class="bc-prizes"><h3 class="ss-h ss-h2">${t('rp_redeemed_by', { name:s.displayName || '' })}</h3>
+        ${prizes.length ? `<div class="bc-prow">${prizes.map(p=> `<div class="bc-prize"><span class="bc-gift" aria-hidden="true">🎁</span><b>${esc(String(p.reason || '').replace(/^Redeemed:\s*/, ''))}</b><small>${esc(shortWhen(tsMs(p.createdAt)))} · −${Math.abs(+p.delta || 0)} ${t('cc_pts')}</small></div>`).join('')}</div>`
+          : `<p class="small-hint">${t('rp_redeemed_none')}</p>`}
+      </section>`;
   }
   function paintList(){
     const box = q('#rp-list'); if(!box) return;
@@ -9631,7 +10204,7 @@ function renderRewardPoints(body){
   const unsubAuth = TDCloud.onAuthChanged(draw);
   draw();
   const poll = setInterval(()=>{ if((state.cloudClassId || null) !== shownClassId) draw(); }, 1500);     // linking happens in Cloud Class, which doesn't announce it
-  return ()=>{ clearInterval(poll); stopSubs(); unsubAuth(); };
+  return ()=>{ clearInterval(poll); stopSubs(); unsubAuth(); document.removeEventListener('td:rewardpoints-pending', onPending); rpPendingStudent = null; };
 }
 
 
@@ -9695,4 +10268,7 @@ function init(){
   checkReminders();
   setInterval(checkReminders, 30000);
 }
-init();
+// platform (Canvas): the launch's one-time code exchange (js/canvas.js) is async and decides whether this visitor is a
+// teacher at all, so init() waits for canvas.js to call it. Everywhere else it runs straight away.
+if(PF && PF.deferInit) window.__tdInit = init;
+else init();

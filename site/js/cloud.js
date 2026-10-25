@@ -324,6 +324,123 @@ const TDCloud = (() => {
   }
   function resetHomeworkSyncCache(){ lastHwHash = ''; }
 
+  // ---- v0.21.2 (backend v2.0.0): attendance shared with families, family codes, Class Pulse ----
+  // Attendance: one doc per student per day, students/{id}/attendance/{YYYY-MM-DD} = { status, classId, updatedAt },
+  // the per-student path ParentDeck reads (never a class-wide sheet). status null = remove that day.
+  async function syncAttendance(classId, entries){
+    const FV = firebase.firestore.FieldValue;
+    for(let i = 0; i < entries.length; i += 400){
+      const batch = db.batch();
+      entries.slice(i, i + 400).forEach(e=>{
+        const ref = db.collection('students').doc(e.studentId).collection('attendance').doc(e.day);
+        if(e.status) batch.set(ref, { status: e.status, classId, updatedAt: FV.serverTimestamp() });
+        else batch.delete(ref);
+      });
+      await batch.commit();
+    }
+  }
+  async function getFamilyCodes(classId){
+    return ((await functions.httpsCallable('getFamilyCodes')({ classId })).data || {}).codes || [];
+  }
+  async function regenerateFamilyCode(classId, studentId){
+    return (await functions.httpsCallable('regenerateFamilyCode')({ classId, studentId })).data;
+  }
+  // ---- v0.21.3 (backend v2.1.0): schools and notes from the school admin ----
+  async function joinSchool(code){
+    return (await functions.httpsCallable('joinSchool')({ code })).data;
+  }
+  // platform (Canvas, backend v2.11.0): with school-level Pro on (TD_PLATFORM.schoolPro), also asks getMySchoolPro whether
+  // the school is Pro, since schools/* has no client rule. Cached per schoolId, so a snapshot that doesn't change the school
+  // doesn't call it again, and a passing error keeps the last answer instead of flashing the teacher back to Free.
+  let proCacheSchoolId = null, proCacheValue = false;
+  function subscribeMySchool(cb){
+    const u = firebase.auth().currentUser; if(!u){ cb({}); return ()=>{}; }
+    const wantPro = !!(window.TD_PLATFORM && window.TD_PLATFORM.schoolPro);
+    if(!wantPro) return db.collection('users').doc(u.uid).onSnapshot(d=> cb(d.exists ? { schoolId: d.data().schoolId || null, schoolName: d.data().schoolName || null } : {}), ()=> cb({}));
+    return db.collection('users').doc(u.uid).onSnapshot(async d=>{
+      const schoolId = d.exists ? (d.data().schoolId || null) : null;
+      const schoolName = d.exists ? (d.data().schoolName || null) : null;
+      if(!schoolId){ proCacheSchoolId = null; cb({ schoolId:null, schoolName:null, pro:false }); return; }
+      if(schoolId !== proCacheSchoolId){
+        try{ proCacheValue = !!(await functions.httpsCallable('getMySchoolPro')()).data.pro; proCacheSchoolId = schoolId; }
+        catch(e){ /* keep the last known value on a passing error */ }
+      }
+      cb({ schoolId, schoolName, pro: proCacheValue });
+    }, ()=> cb({}));
+  }
+  function subscribeAdminNotes(cb){
+    const u = firebase.auth().currentUser; if(!u){ cb([]); return ()=>{}; }
+    return db.collection('adminNotes').where('teacherUid', '==', u.uid).orderBy('createdAtMs', 'desc').limit(30)
+      .onSnapshot(s=> cb(s.docs.map(d=> ({ id: d.id, ...d.data() }))), ()=> cb(null));   // null: rule not deployed (backend < v2.1.0)
+  }
+  async function markAdminNoteRead(noteId){
+    await db.collection('adminNotes').doc(noteId).update({ read: true, readAt: firebase.firestore.FieldValue.serverTimestamp() });
+  }
+  async function setClassPulse(classId, enabled){
+    return (await functions.httpsCallable('setClassPulse')({ classId, enabled })).data;
+  }
+
+  // ---- v0.26.0 (backend v2.7.0): DrawDeck "share this page" -> StudentDeck's Shared Board ----
+  // Direct client write, same pattern as syncCalendar/syncHomework above — the only validation
+  // firestore.rules needs (shape, size cap) is something a rule can enforce on its own, so this
+  // skips a Cloud Function. One shared page per class at a time: writing classes/{id}/sharedBoards/current
+  // replaces whatever was there; stopSharingBoard deletes it.
+  async function shareBoard(classId, imageDataUrl){
+    if(!ready || !classId) throw new Error('not ready');
+    const u = firebase.auth().currentUser; if(!u) throw new Error('not signed in');
+    await db.collection('classes').doc(classId).collection('sharedBoards').doc('current').set({
+      imageDataUrl, sharedAt: Date.now(), sharedBy: u.uid
+    });
+  }
+  async function stopSharingBoard(classId){
+    if(!ready || !classId) throw new Error('not ready');
+    await db.collection('classes').doc(classId).collection('sharedBoards').doc('current').delete();
+  }
+
+  // ---- v0.27.0 (backend v2.8.0): Scrapdeck review (M3) ----
+  // A teacher's free review screen for pages students have shared from StudentDeck's Scrapdeck.
+  // listScrapPages/reviewScrapPage are Cloud Functions (see scrapdeck.js's header comment for why
+  // the list is a function, not a client collectionGroup query); setScrapGalleryOn is the
+  // teacher's own per-class switch for the classmates' gallery (M3b), off by default.
+  async function listScrapPages(classId){
+    return (await functions.httpsCallable('listScrapPages')({ classId })).data.rows;
+  }
+  async function reviewScrapPage(studentId, pageId, action){
+    return (await functions.httpsCallable('reviewScrapPage')({ studentId, pageId, action })).data;
+  }
+  async function setScrapGalleryOn(classId, enabled){
+    return (await functions.httpsCallable('setScrapGalleryOn')({ classId, enabled })).data;
+  }
+  async function getScrapImage(studentId, pageId){
+    const d = await db.collection('students').doc(studentId).collection('scrapImages').doc(pageId).get();
+    return d.exists ? d.data().imageDataUrl : null;
+  }
+
+  // ---- v0.29.0 (backend v2.9.0): Board Assignments (DrawDeck scope step D) ----
+  async function assignBoard(classId, title, thumbDataUrl, imageDataUrl){
+    return (await functions.httpsCallable('assignBoard')({ classId, title, thumbDataUrl, imageDataUrl })).data;
+  }
+  async function closeAssignment(classId, assignmentId, open){
+    return (await functions.httpsCallable('closeAssignment')({ classId, assignmentId, open })).data;
+  }
+  async function listBoardAnswers(classId, assignmentId){
+    return (await functions.httpsCallable('listBoardAnswers')({ classId, assignmentId })).data.rows;
+  }
+  async function awardBoardAnswer(classId, studentId, assignmentId, amount, reason){
+    return (await functions.httpsCallable('awardBoardAnswer')({ classId, studentId, assignmentId, amount, reason })).data;
+  }
+  function subscribeBoardAssignments(classId, cb){
+    if(!ready || !classId) return ()=>{};
+    return db.collection('classes').doc(classId).collection('boardAssignments').onSnapshot(
+      snap=> cb(snap.docs.map(d=> ({ id:d.id, ...d.data() })).sort((a,b)=> (b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0) - (a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0))),
+      ()=> cb([])
+    );
+  }
+  async function getBoardAnswerImage(studentId, assignmentId){
+    const d = await db.collection('students').doc(studentId).collection('boardAnswerImages').doc(assignmentId).get();
+    return d.exists ? d.data().imageDataUrl : null;
+  }
+
   return {
     isConfigured, init, watchAuth, onAuthChanged, signIn, signOut: signOutCloud, getSession,
     myClasses, createClass, regenerateJoinCode, setRankingVisibility,
@@ -332,7 +449,12 @@ const TDCloud = (() => {
     subscribeStudentActivity, subscribeLedger, sendNotesHome, subscribeNotes, deleteNote,
     sendProgressReport, deleteProgressReport,
     syncCalendar, resetCalendarSyncCache,
-    syncHomework, resetHomeworkSyncCache
+    syncHomework, resetHomeworkSyncCache,
+    syncAttendance, getFamilyCodes, regenerateFamilyCode, setClassPulse,
+    joinSchool, subscribeMySchool, subscribeAdminNotes, markAdminNoteRead,
+    shareBoard, stopSharingBoard,
+    listScrapPages, reviewScrapPage, setScrapGalleryOn, getScrapImage,
+    assignBoard, closeAssignment, listBoardAnswers, awardBoardAnswer, subscribeBoardAssignments, getBoardAnswerImage
   };
 })();
 TDCloud.watchAuth();
