@@ -16,7 +16,7 @@
    Every value is length-limited and treated as plain text (it is only ever shown with textContent or via the app's own escaping). */
 (function(){
   'use strict';
-  var BUILD = 'classin.2';   // the platform build: raise it for a ClassIn-only release; back to classin.1 when TeachersDeck's version changes
+  var BUILD = 'classin.3';   // the platform build for local builds; the publish workflow numbers live builds itself (tools/build_platform.py --against)
   var q = new URLSearchParams(location.search);
 
   /* Left out of the ClassIn edition: ClassIn's browser is SHARED ON THE BOARD, so nothing with student data or the teacher's
