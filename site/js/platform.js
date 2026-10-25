@@ -16,14 +16,15 @@
    Every value is length-limited and treated as plain text (it is only ever shown with textContent or via the app's own escaping). */
 (function(){
   'use strict';
-  var BUILD = 'classin.3';   // the platform build for local builds; the publish workflow numbers live builds itself (tools/build_platform.py --against)
+  var BUILD = 'classin.4';   // the platform build for local builds; the publish workflow numbers live builds itself (tools/build_platform.py --against)
   var q = new URLSearchParams(location.search);
 
   /* Left out of the ClassIn edition: ClassIn's browser is SHARED ON THE BOARD, so nothing with student data or the teacher's
      personal progress may show in it, and anything that needs a sign-in pop-up or the Google Meet launcher can't work there. */
   var HIDDEN = ['meet', 'cloudclass', 'noteshome', 'classactivity', 'rewardpoints', 'lessonplanner', 'progressreports', 'assignments', 'stats',
     'badges', 'badgecase',          // the teacher's own badges (badgecase since TeachersDeck 0.22.1)
-    'scrapreview', 'boardreview'];  // students' shared Scrapdeck pages and board answers (0.27.0, 0.29.0)
+    'scrapreview', 'boardreview',   // students' shared Scrapdeck pages and board answers (0.27.0, 0.29.0)
+    'attendance', 'classbuilder'];  // who is present or absent, and the whole roster (since classin.4; Name Picker and Group Maker stay — names are their point)
   var BOARD_LAYOUT = { instructions:'fill', agenda:'fill', checklist:'fill', scoreboard:'scale' };    // widgets that use the whole window; the rest are scaled up to fit it
 
   function clip(v, n){ return String(v == null ? '' : v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').slice(0, n); }
