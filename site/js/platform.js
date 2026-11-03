@@ -16,7 +16,7 @@
    Every value is length-limited and treated as plain text (it is only ever shown with textContent or via the app's own escaping). */
 (function(){
   'use strict';
-  var BUILD = 'classin.5';   // the platform build for local builds; the publish workflow numbers live builds itself (tools/build_platform.py --against)
+  var BUILD = 'classin.6';   // the platform build for local builds; the publish workflow numbers live builds itself (tools/build_platform.py --against)
   var q = new URLSearchParams(location.search);
 
   /* Left out of the ClassIn edition: ClassIn's browser is SHARED ON THE BOARD, so nothing with student data or the teacher's
