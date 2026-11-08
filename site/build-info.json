@@ -1,10 +1,10 @@
 {
  "platform": "classin",
  "name": "TeachersDeck for ClassIn",
- "version": "0.41.0-classin.1",
+ "version": "0.41.0-classin.2",
  "app_version": "0.41.0",
- "build": "classin.1",
- "commit": "f7881fd",
- "built": "2026-11-08T12:30:59Z",
+ "build": "classin.2",
+ "commit": "7ee3b8e",
+ "built": "2026-11-08T12:42:25Z",
  "widgets": 45
 }
