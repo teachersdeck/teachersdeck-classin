@@ -52,6 +52,7 @@
     lang: lang,
     fixedWidgets: true,            // app.js: no first-run tidy — a ClassIn link can open any board widget
     schoolPro: false, deferInit: false,
+    proPurchase: true, store: true,   // owner, 13 Nov 2026: Upgrade to Pro (VietQR) and Theme → Shop (js/tdstore.js) are on in ClassIn
     hidden: HIDDEN, boardLayout: BOARD_LAYOUT,
     widget: widget, single: !!widget,
     scale: Math.min(3, Math.max(0.5, parseFloat(q.get('scale')) || 1)), ui: q.get('ui') !== '0',
